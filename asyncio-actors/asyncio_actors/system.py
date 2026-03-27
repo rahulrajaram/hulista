@@ -8,7 +8,6 @@ from typing import Any
 
 from asyncio_actors.actor import Actor, ActorRef
 from asyncio_actors.inbox import Inbox
-from asyncio_actors.supervision import RestartPolicy
 
 logger = logging.getLogger(__name__)
 

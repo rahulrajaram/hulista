@@ -9,14 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from asyncio_actors.actor import Actor, ActorRef
-from asyncio_actors.inbox import Inbox
-from asyncio_actors.supervision import RestartPolicy, SupervisionStrategy
 
 logger = logging.getLogger(__name__)
 

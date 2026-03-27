@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import collections.abc
-from persistent_collections._hamt import _BitmapNode, EMPTY_BITMAP_NODE, _hash_fold
+from persistent_collections._hamt import EMPTY_BITMAP_NODE, _hash_fold
 
 
 class PersistentMap(collections.abc.Mapping):

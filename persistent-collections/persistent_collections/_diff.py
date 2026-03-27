@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterator
 
-from persistent_collections._hamt import _BitmapNode, _CollisionNode, _ArrayNode, _popcount, BITS_PER_LEVEL, MASK
 
 
 class ChangeType(Enum):

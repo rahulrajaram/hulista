@@ -1,7 +1,6 @@
 """Tests for CircuitBreaker."""
 from __future__ import annotations
 
-import pytest
 
 from asyncio_actors.circuit_breaker import CircuitBreaker, CircuitState
 

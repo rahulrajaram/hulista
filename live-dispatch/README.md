@@ -1,6 +1,6 @@
 # live-dispatch
 
-Runtime-extensible dispatch — single dispatch, predicate dispatch, and versioned handler rollback. Agents and plugins can register handlers dynamically.
+Runtime-extensible dispatch — single dispatch, predicate dispatch, async dispatch, and versioned handler rollback. Agents and plugins can register handlers dynamically.
 
 ## Install
 
@@ -49,6 +49,22 @@ dispatch(200)  # "large"  (predicate matches first — higher priority)
 dispatch(5)    # "normal"
 ```
 
+### Async dispatch
+
+```python
+import asyncio
+from live_dispatch import Dispatcher
+
+dispatch = Dispatcher("async_api")
+
+@dispatch.register
+async def handle_str(x: str) -> str:
+    await asyncio.sleep(0.01)
+    return f"async: {x}"
+
+result = asyncio.run(dispatch.call_async("hello"))  # "async: hello"
+```
+
 ### Versioned rollback
 
 ```python
@@ -71,6 +87,28 @@ with versioned(dispatch) as v:
 assert dispatch("test") == "v1"
 ```
 
+### Sealed type exhaustiveness checking
+
+```python
+from sealed_typing import sealed
+from live_dispatch import Dispatcher
+
+@sealed
+class Event:
+    pass
+
+class Click(Event): pass
+class Hover(Event): pass
+
+dispatch = Dispatcher("events")
+
+@dispatch.register
+def on_click(e: Click): ...
+
+# Raises TypeError listing missing: {Hover}
+dispatch.verify_exhaustive(Event)
+```
+
 ## API reference
 
 ### `Dispatcher(name="dispatcher")`
@@ -83,6 +121,10 @@ assert dispatch("test") == "v1"
 | `.clear()` | `() -> None` | Remove all handlers |
 | `.handlers()` | `() -> list[dict]` | Introspect registered handlers |
 | `dispatch(*args, **kw)` | `(*Any, **Any) -> Any` | Call the best matching handler |
+| `.call_async(*args, **kw)` | `async (*Any, **Any) -> Any` | Async dispatch |
+| `.verify_exhaustive(sealed_base)` | `(type) -> None` | Assert handlers cover all sealed subclasses |
+
+Dispatch results are cached by argument type tuple for O(1) amortized dispatch on repeated type signatures. The cache is automatically invalidated on `register()`, `unregister()`, and `clear()`. Handlers with predicates bypass the cache since they depend on argument values.
 
 ### `predicate(condition)`
 
@@ -90,15 +132,18 @@ Decorator that attaches a predicate function to a handler. The predicate receive
 
 ### `versioned(dispatcher) -> VersionedContext`
 
-Context manager that snapshots the handler list on entry. Call `.rollback()` inside to restore to the snapshot.
+Context manager that snapshots the handler list on entry. Call `.rollback()` inside to restore to the snapshot. Rollback also clears the dispatch cache.
 
 ## Upstream context
 
 `functools.singledispatch` provides static single dispatch. `live-dispatch` extends this with:
 - **Multiple dispatch** on multiple argument types
 - **Predicate dispatch** on runtime values
+- **Async dispatch** for async handler functions
 - **Dynamic registration** — handlers added/removed at runtime
 - **Versioned rollback** — experiment with new handlers safely
+- **Dispatch cache** — O(1) amortized dispatch on repeated type signatures
+- **Sealed type integration** — verify exhaustive handler coverage
 
 ## License
 

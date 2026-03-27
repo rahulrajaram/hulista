@@ -12,7 +12,6 @@ from persistent_collections._hamt import (
     BITS_PER_LEVEL,
     BRANCH_FACTOR,
     MASK,
-    _ARRAY_NODE_THRESHOLD,
 )
 
 

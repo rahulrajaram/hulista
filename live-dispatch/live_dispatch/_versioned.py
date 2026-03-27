@@ -1,8 +1,6 @@
 """Versioned dispatch tables with rollback support."""
 from __future__ import annotations
 
-from typing import Any
-from contextlib import contextmanager
 
 
 class VersionedContext:

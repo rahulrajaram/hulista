@@ -1,6 +1,6 @@
 # with-update
 
-Record update syntax for frozen dataclasses — the `|` operator and `.with_update()` method so you never need raw `dataclasses.replace()`.
+Record update syntax for frozen dataclasses — the `|` operator and `.with_update()` method so you never need raw `dataclasses.replace()`. Includes runtime field validation.
 
 ## Install
 
@@ -56,6 +56,16 @@ new = cfg.with_update(port=9090, debug=True)
 | `.with_update(**kw)` | `(**Any) -> Self` | Return new instance with keyword fields applied |
 
 Works with both frozen dataclasses and Pydantic `BaseModel` subclasses.
+
+### Runtime field validation
+
+The `|` operator validates field names at runtime. Invalid fields raise `TypeError` with a clear message:
+
+```python
+cfg = Config()
+cfg | {"nonexistent": 42}
+# TypeError: Invalid field(s) for Config: nonexistent. Valid fields: debug, host, port
+```
 
 ## Upstream context
 
