@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "live-dispatch"
+version = "0.1.0"
+description = "Runtime-extensible dispatch with multiple dispatch, predicate dispatch, and versioning"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["dispatch", "multiple-dispatch", "predicate-dispatch", "runtime"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-cov"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["live_dispatch*"]
+
+[tool.setuptools.package-data]
+live_dispatch = ["py.typed"]

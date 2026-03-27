@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "taskgroup-collect"
+version = "0.1.0"
+description = "TaskGroup variant that collects all errors instead of aborting on the first"
+requires-python = ">=3.11"
+license = "MIT"
+
+[project.urls]
+"Bug Tracker" = "https://github.com/python/cpython/issues/101581"
