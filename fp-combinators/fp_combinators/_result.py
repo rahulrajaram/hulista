@@ -1,6 +1,7 @@
 """Result type for typed error handling without exceptions."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Callable, Generic, TypeVar
 
@@ -100,6 +101,29 @@ def try_pipe(value: Any, /, *funcs: Callable) -> Result:
     for f in funcs:
         try:
             value = f(value)
+        except Exception as e:
+            return Err(e)
+    return Ok(value)
+
+
+async def async_try_pipe(value: Any, /, *funcs: Callable) -> Result:
+    """Async version of try_pipe — handles both sync and async functions.
+
+    Like async_pipe(), but wraps the pipeline in error handling.
+    If any function raises (or an awaited coroutine raises), returns Err(exception).
+    On success, returns Ok(final_value).
+
+    Usage:
+        result = await async_try_pipe("42", int, async_validate)
+        # Ok(validated_value) or Err(exception)
+    """
+    for f in funcs:
+        try:
+            result = f(value)
+            if asyncio.iscoroutine(result):
+                value = await result
+            else:
+                value = result
         except Exception as e:
             return Err(e)
     return Ok(value)

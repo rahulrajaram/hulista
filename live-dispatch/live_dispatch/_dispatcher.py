@@ -90,33 +90,9 @@ class Dispatcher:
 
     def __call__(self, *args, **kwargs) -> Any:
         """Dispatch to the best matching handler."""
-        # Use cache only for positional-only calls without predicates
-        if not kwargs and not self._has_predicates:
-            key = tuple(type(a) for a in args)
-            cached = self._cache.get(key, _SENTINEL)
-            if cached is not _SENTINEL:
-                if cached is not None:
-                    return cached.func(*args)
-                # cached is None means no handler matched — fall through to fallback
-                if self._fallback is not None:
-                    return self._fallback(*args)
-                raise TypeError(
-                    f"No handler in dispatcher '{self._name}' matches "
-                    f"arguments: {_format_args(args, kwargs)}"
-                )
-
-            # Cache miss — find handler and cache
-            for handler in self._handlers:
-                if handler.matches(args, kwargs):
-                    self._cache[key] = handler
-                    return handler.func(*args, **kwargs)
-
-            # No handler matched — cache the miss too
-            self._cache[key] = None
-        else:
-            for handler in self._handlers:
-                if handler.matches(args, kwargs):
-                    return handler.func(*args, **kwargs)
+        handler = self._find_handler(args, kwargs)
+        if handler is not None:
+            return handler.func(*args, **kwargs)
 
         if self._fallback is not None:
             return self._fallback(*args, **kwargs)
@@ -149,14 +125,34 @@ class Dispatcher:
         self._fallback = None
         self._cache.clear()
 
-    async def call_async(self, *args, **kwargs) -> Any:
-        """Async dispatch — calls the handler and awaits if it returns a coroutine."""
+    def _find_handler(self, args, kwargs) -> _Handler | None:
+        """Find the best matching handler, using cache when possible."""
+        if not kwargs and not self._has_predicates:
+            key = tuple(type(a) for a in args)
+            cached = self._cache.get(key, _SENTINEL)
+            if cached is not _SENTINEL:
+                return cached
+
+            for handler in self._handlers:
+                if handler.matches(args, kwargs):
+                    self._cache[key] = handler
+                    return handler
+            self._cache[key] = None
+            return None
+
         for handler in self._handlers:
             if handler.matches(args, kwargs):
-                result = handler.func(*args, **kwargs)
-                if asyncio.iscoroutine(result):
-                    return await result
-                return result
+                return handler
+        return None
+
+    async def call_async(self, *args, **kwargs) -> Any:
+        """Async dispatch — calls the handler and awaits if it returns a coroutine."""
+        handler = self._find_handler(args, kwargs)
+        if handler is not None:
+            result = handler.func(*args, **kwargs)
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
 
         if self._fallback is not None:
             result = self._fallback(*args, **kwargs)

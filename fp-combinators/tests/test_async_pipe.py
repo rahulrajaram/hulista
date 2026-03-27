@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from fp_combinators._core import async_pipe
+from fp_combinators._result import async_try_pipe, Ok
 
 
 # ---------------------------------------------------------------------------
@@ -223,3 +224,58 @@ async def test_sync_pipe_propagates_exceptions():
 
     with pytest.raises(RuntimeError, match="sync explode"):
         await async_pipe(1, boom)
+
+
+# ---------------------------------------------------------------------------
+# async_try_pipe tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_all_sync_success():
+    result = await async_try_pipe("42", int, double)
+    assert result == Ok(84)
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_all_sync_error():
+    result = await async_try_pipe("not_a_number", int)
+    assert result.is_err()
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_async_success():
+    result = await async_try_pipe(5, async_double, add_one)
+    assert result == Ok(11)
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_async_error():
+    async def boom(x):
+        raise ValueError("async boom")
+
+    result = await async_try_pipe(1, boom)
+    assert result.is_err()
+    assert "async boom" in str(result.unwrap_err())
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_mixed_sync_async():
+    result = await async_try_pipe(3, add_one, async_double, to_str)
+    assert result == Ok("8")
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_error_midway():
+    def fail_on_ten(x):
+        if x == 10:
+            raise RuntimeError("ten is bad")
+        return x
+
+    result = await async_try_pipe(5, async_double, fail_on_ten)
+    assert result.is_err()
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_empty():
+    result = await async_try_pipe(42)
+    assert result == Ok(42)

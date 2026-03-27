@@ -1,5 +1,4 @@
 import pytest
-import dataclasses
 from dataclasses import dataclass
 from with_update import updatable, with_update
 
@@ -77,3 +76,82 @@ class TestDecoratorValidation:
             @updatable
             class NotADataclass:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# Pydantic model tests
+# ---------------------------------------------------------------------------
+
+pydantic = pytest.importorskip("pydantic")
+
+
+class TestPydanticUpdatable:
+    def test_or_single_field(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+            port: int = 8080
+
+        cfg = Config()
+        cfg2 = cfg | {"port": 9090}
+        assert cfg2.port == 9090
+        assert cfg.port == 8080  # Original unchanged
+
+    def test_or_multiple_fields(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+            port: int = 8080
+            debug: bool = False
+
+        cfg = Config()
+        cfg2 = cfg | {"port": 9090, "debug": True}
+        assert cfg2.port == 9090
+        assert cfg2.debug is True
+        assert cfg2.host == "localhost"
+
+    def test_with_update_method(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+            port: int = 8080
+
+        cfg = Config()
+        cfg2 = cfg.with_update(host="0.0.0.0")
+        assert cfg2.host == "0.0.0.0"
+
+    def test_chained_updates(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+            port: int = 8080
+            debug: bool = False
+
+        cfg = Config()
+        cfg2 = cfg | {"host": "0.0.0.0"} | {"port": 443}
+        assert cfg2.host == "0.0.0.0"
+        assert cfg2.port == 443
+
+    def test_invalid_field_raises(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+
+        cfg = Config()
+        with pytest.raises((TypeError, Exception)):
+            cfg | {"nonexistent": 42}

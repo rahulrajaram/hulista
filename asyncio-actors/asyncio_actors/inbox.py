@@ -136,19 +136,27 @@ class Inbox(Generic[T]):
             import time
             deadline = time.monotonic() + timeout
 
-        while True:
-            remaining = None
-            if deadline is not None:
-                import time
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise asyncio.TimeoutError()
+        stashed: list[T] = []
+        try:
+            while True:
+                remaining = None
+                if deadline is not None:
+                    import time
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise asyncio.TimeoutError()
 
-            msg = await self.get(timeout=remaining)
-            if isinstance(msg, match):
-                return msg
-            # Not a match — re-queue at the back
-            self._queue.append(msg)
+                msg = await self.get(timeout=remaining)
+                if isinstance(msg, match):
+                    return msg
+                # Not a match — stash for re-insertion in order
+                stashed.append(msg)
+        finally:
+            # Re-insert stashed messages at the front, preserving order
+            if stashed:
+                stashed.reverse()
+                for m in stashed:
+                    self._queue.appendleft(m)
 
     def drain_into(self, other: Inbox[T]) -> int:
         """Drain remaining messages into another inbox (synchronous, no await).

@@ -76,6 +76,7 @@ class ActorSystem:
         while self._running:
             try:
                 await actor._run()
+                consecutive_failures = 0  # Reset on successful run
                 break  # Clean / intentional shutdown — do not restart.
             except Exception as e:
                 consecutive_failures += 1

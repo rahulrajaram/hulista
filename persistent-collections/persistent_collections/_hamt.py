@@ -15,7 +15,7 @@ _ARRAY_NODE_THRESHOLD = 16
 
 def _popcount(x):
     """Count set bits in integer."""
-    return bin(x).count('1')
+    return x.bit_count()
 
 
 def _hash_fold(h):

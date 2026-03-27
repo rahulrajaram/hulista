@@ -14,8 +14,14 @@ from enum import Enum
 from typing import Any
 
 from asyncio_actors.actor import Actor, ActorRef
+from asyncio_actors.inbox import Inbox
 
 logger = logging.getLogger(__name__)
+
+# Backoff constants (shared with system.py)
+_BACKOFF_BASE = 0.1
+_BACKOFF_MAX = 5.0
+_BACKOFF_FACTOR = 2.0
 
 
 class SupervisorStrategy(Enum):
@@ -57,6 +63,8 @@ class Supervisor(Actor):
 
     def __init__(self) -> None:
         super().__init__()
+        # Copy class-level children_specs to avoid shared mutable state
+        self.children_specs = list(type(self).children_specs)
         self._children: list[tuple[ChildSpec, Actor, asyncio.Task]] = []
 
     async def on_start(self) -> None:
@@ -77,21 +85,45 @@ class Supervisor(Actor):
         return actor
 
     async def _watch_child(self, spec: ChildSpec, actor: Actor) -> None:
-        """Run a child actor and handle its exit."""
-        try:
-            await actor._run()
-            # Clean exit
-            if spec.restart == RestartType.PERMANENT:
-                logger.info("Restarting permanent child %s after clean exit",
-                            spec.actor_cls.__name__)
-                await self._handle_child_exit(spec, actor, normal=True)
-        except Exception as e:
-            logger.error("Child %s crashed: %s", spec.actor_cls.__name__, e)
-            if spec.restart == RestartType.TEMPORARY:
-                logger.info("Not restarting temporary child %s",
-                            spec.actor_cls.__name__)
+        """Run a child actor and handle its exit with backoff and drain."""
+        consecutive_failures = 0
+        while True:
+            try:
+                await actor._run()
+                consecutive_failures = 0
+                # Clean exit
+                if spec.restart == RestartType.PERMANENT:
+                    logger.info("Restarting permanent child %s after clean exit",
+                                spec.actor_cls.__name__)
+                    await self._handle_child_exit(spec, actor, normal=True)
                 return
-            await self._handle_child_exit(spec, actor, normal=False)
+            except Exception as e:
+                consecutive_failures += 1
+                logger.error("Child %s crashed: %s", spec.actor_cls.__name__, e)
+                if spec.restart == RestartType.TEMPORARY:
+                    logger.info("Not restarting temporary child %s",
+                                spec.actor_cls.__name__)
+                    return
+
+                # Exponential backoff before restart
+                delay = min(
+                    _BACKOFF_BASE * (_BACKOFF_FACTOR ** (consecutive_failures - 1)),
+                    _BACKOFF_MAX,
+                )
+                await asyncio.sleep(delay)
+
+                # Drain old inbox into new one (message preservation)
+                old_inbox = actor._inbox
+                actor._running = False
+                new_inbox = Inbox(
+                    maxsize=actor.inbox_size,
+                    policy=actor.overflow_policy,
+                )
+                old_inbox.drain_into(new_inbox)
+                actor._inbox = new_inbox
+
+                await self._handle_child_exit(spec, actor, normal=False)
+                return  # _handle_child_exit creates a new watcher task
 
     async def _handle_child_exit(self, spec: ChildSpec, actor: Actor, normal: bool) -> None:
         """Apply the supervisor strategy when a child exits."""

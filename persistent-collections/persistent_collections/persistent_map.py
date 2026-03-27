@@ -183,4 +183,4 @@ class TransientMap:
         return self
 
     def __exit__(self, *args):
-        pass
+        self._frozen = True

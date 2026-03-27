@@ -60,12 +60,7 @@ class CircuitBreaker:
 
     @property
     def state(self) -> CircuitState:
-        """Current circuit state, evaluating timeouts."""
-        if self._state == CircuitState.OPEN:
-            now = time.monotonic()
-            if now - self._last_failure_time >= self._recovery_timeout:
-                self._state = CircuitState.HALF_OPEN
-                self._half_open_calls = 0
+        """Current circuit state (pure read, no side effects)."""
         return self._state
 
     def allow_request(self, now: float | None = None) -> bool:

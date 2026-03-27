@@ -193,16 +193,17 @@ class TestContextManager:
         with t as tm:
             assert tm is t
 
-    def test_context_manager_does_not_freeze_on_exit(self):
-        """__exit__ does NOT freeze — you still call .persistent() yourself."""
+    def test_context_manager_freezes_on_exit(self):
+        """__exit__ freezes the transient — mutations after the block raise."""
         t = TransientMap()
         with t:
             t["k"] = "v"
-        # After the with-block, the transient is NOT yet frozen
-        t["k2"] = "v2"  # should not raise
+        # After the with-block, the transient is frozen
+        with pytest.raises(RuntimeError):
+            t["k2"] = "v2"
+        # Can still read and call persistent()
         pm = t.persistent()
         assert pm["k"] == "v"
-        assert pm["k2"] == "v2"
 
     def test_context_manager_with_many_keys(self):
         t = TransientMap()

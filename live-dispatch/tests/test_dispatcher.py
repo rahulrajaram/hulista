@@ -1,6 +1,8 @@
 """Tests for Dispatcher — single dispatch, multiple dispatch, introspection."""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from live_dispatch import Dispatcher
 
@@ -348,3 +350,176 @@ def test_repr():
         return "int"
 
     assert "1" in repr(d)
+
+
+# ---------------------------------------------------------------------------
+# call_async
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_call_async_sync_handler():
+    d = Dispatcher("async_test")
+
+    @d.register
+    def handle_int(x: int) -> str:
+        return f"sync:{x}"
+
+    result = await d.call_async(42)
+    assert result == "sync:42"
+
+
+@pytest.mark.asyncio
+async def test_call_async_async_handler():
+    d = Dispatcher("async_test")
+
+    @d.register
+    async def handle_str(x: str) -> str:
+        await asyncio.sleep(0)
+        return f"async:{x}"
+
+    result = await d.call_async("hello")
+    assert result == "async:hello"
+
+
+@pytest.mark.asyncio
+async def test_call_async_uses_cache():
+    """call_async should benefit from the dispatch cache."""
+    d = Dispatcher("cached_async")
+
+    @d.register
+    def handle_int(x: int) -> str:
+        return f"int:{x}"
+
+    # First call populates cache
+    result1 = await d.call_async(1)
+    assert result1 == "int:1"
+    # Second call should hit cache
+    result2 = await d.call_async(2)
+    assert result2 == "int:2"
+    # Verify cache has our type
+    key = (int,)
+    assert key in d._cache
+
+
+@pytest.mark.asyncio
+async def test_call_async_fallback():
+    d = Dispatcher("async_fb")
+
+    @d.fallback
+    def catch_all(*args):
+        return "fallback"
+
+    result = await d.call_async("anything")
+    assert result == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_call_async_no_match():
+    d = Dispatcher("async_none")
+
+    @d.register
+    def handle_int(x: int):
+        return "int"
+
+    with pytest.raises(TypeError, match="No handler"):
+        await d.call_async("string_value")
+
+
+@pytest.mark.asyncio
+async def test_call_async_async_fallback():
+    d = Dispatcher("async_afb")
+
+    @d.fallback
+    async def catch_all(*args):
+        await asyncio.sleep(0)
+        return "async_fallback"
+
+    result = await d.call_async("anything")
+    assert result == "async_fallback"
+
+
+# ---------------------------------------------------------------------------
+# verify_exhaustive
+# ---------------------------------------------------------------------------
+
+# Module-level sealed classes for verify_exhaustive tests
+# (Must be module-level so get_type_hints can resolve them)
+
+class _Event:
+    __sealed__ = True
+    __sealed_subclasses__ = set()
+
+class _Click(_Event):
+    pass
+
+class _Hover(_Event):
+    pass
+
+class _Scroll(_Event):
+    pass
+
+_Event.__sealed_subclasses__ = {_Click, _Hover, _Scroll}
+
+
+def test_verify_exhaustive_full_coverage():
+    d = Dispatcher("events")
+
+    @d.register
+    def on_click(e: _Click):
+        pass
+
+    @d.register
+    def on_hover(e: _Hover):
+        pass
+
+    @d.register
+    def on_scroll(e: _Scroll):
+        pass
+
+    # Should not raise
+    d.verify_exhaustive(_Event)
+
+
+def test_verify_exhaustive_missing_handler():
+    d = Dispatcher("events")
+
+    @d.register
+    def on_click(e: _Click):
+        pass
+
+    # Missing Hover and Scroll
+    with pytest.raises(TypeError, match="Missing"):
+        d.verify_exhaustive(_Event)
+
+
+def test_verify_exhaustive_not_sealed():
+    d = Dispatcher("test")
+
+    class NotSealed:
+        pass
+
+    with pytest.raises(TypeError, match="not a sealed class"):
+        d.verify_exhaustive(NotSealed)
+
+
+def test_verify_exhaustive_no_handlers():
+    d = Dispatcher("events")
+
+    with pytest.raises(TypeError, match="Missing"):
+        d.verify_exhaustive(_Event)
+
+
+def test_verify_exhaustive_partial_coverage():
+    d = Dispatcher("events")
+
+    @d.register
+    def on_click(e: _Click):
+        pass
+
+    @d.register
+    def on_hover(e: _Hover):
+        pass
+
+    # Missing Scroll
+    with pytest.raises(TypeError, match="Scroll"):
+        d.verify_exhaustive(_Event)
