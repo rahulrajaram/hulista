@@ -14,7 +14,7 @@ def _is_pydantic_model(cls: type) -> bool:
         return False
 
 
-def _make_or(cls: type):
+def _make_or(cls: type, valid_fields: frozenset[str]):
     """Create __or__ method appropriate for the class type."""
     is_dc = dataclasses.is_dataclass(cls)
     is_pydantic = _is_pydantic_model(cls)
@@ -22,6 +22,13 @@ def _make_or(cls: type):
     def __or__(self, changes):
         if not isinstance(changes, dict):
             return NotImplemented
+        invalid = set(changes.keys()) - valid_fields
+        if invalid:
+            raise TypeError(
+                f"Invalid field(s) for {type(self).__qualname__}: "
+                f"{', '.join(sorted(invalid))}. "
+                f"Valid fields: {', '.join(sorted(valid_fields))}"
+            )
         if is_dc:
             return dataclasses.replace(self, **changes)
         elif is_pydantic:
@@ -64,7 +71,15 @@ def updatable(cls: type) -> type:
             f"got {cls.__qualname__}"
         )
 
-    cls.__or__ = _make_or(cls)
+    # Cache valid field names at decoration time
+    if is_dc:
+        valid_fields = frozenset(f.name for f in dataclasses.fields(cls))
+    elif is_pydantic:
+        valid_fields = frozenset(cls.model_fields.keys())
+    else:
+        valid_fields = frozenset()
+
+    cls.__or__ = _make_or(cls, valid_fields)
     cls.with_update = _make_with_update()
 
     return cls

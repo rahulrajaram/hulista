@@ -7,9 +7,15 @@ import logging
 from typing import Any
 
 from asyncio_actors.actor import Actor, ActorRef
+from asyncio_actors.inbox import Inbox
 from asyncio_actors.supervision import RestartPolicy
 
 logger = logging.getLogger(__name__)
+
+# Backoff constants
+_BACKOFF_BASE = 0.1     # 100ms initial backoff
+_BACKOFF_MAX = 5.0      # 5s max backoff
+_BACKOFF_FACTOR = 2.0   # Exponential factor
 
 
 class ActorSystem:
@@ -67,20 +73,36 @@ class ActorSystem:
     async def _supervise(self, actor: Actor) -> None:
         """Supervision loop: restart the actor according to its restart policy."""
         policy = actor.restart_policy
+        consecutive_failures = 0
         while self._running:
             try:
                 await actor._run()
                 break  # Clean / intentional shutdown — do not restart.
             except Exception as e:
+                consecutive_failures += 1
                 logger.error("Actor %s crashed: %s", type(actor).__name__, e, exc_info=True)
                 if policy.should_restart(time.monotonic()):
                     logger.info("Restarting actor %s", type(actor).__name__)
-                    # Reset internal state for a fresh run.
+
+                    # Exponential backoff before restart
+                    delay = min(
+                        _BACKOFF_BASE * (_BACKOFF_FACTOR ** (consecutive_failures - 1)),
+                        _BACKOFF_MAX,
+                    )
+                    await asyncio.sleep(delay)
+
+                    if not self._running:
+                        break
+
+                    # Drain old inbox messages into the new inbox
+                    old_inbox = actor._inbox
                     actor._running = False
-                    actor._inbox = type(actor._inbox)(
+                    new_inbox = Inbox(
                         maxsize=actor.inbox_size,
                         policy=actor.overflow_policy,
                     )
+                    old_inbox.drain_into(new_inbox)
+                    actor._inbox = new_inbox
                     continue
                 else:
                     logger.error(

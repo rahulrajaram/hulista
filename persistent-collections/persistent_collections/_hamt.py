@@ -9,10 +9,140 @@ BRANCH_FACTOR = 1 << BITS_PER_LEVEL  # 32
 MASK = BRANCH_FACTOR - 1
 MAX_DEPTH = 7  # 32-bit hash / 5 bits = ~7 levels
 
+# ArrayNode promotion threshold (matches C implementation)
+_ARRAY_NODE_THRESHOLD = 16
+
 
 def _popcount(x):
     """Count set bits in integer."""
     return bin(x).count('1')
+
+
+def _hash_fold(h):
+    """Fold a Python hash into 32 bits using XOR, matching C implementation."""
+    h = h & 0xFFFFFFFFFFFFFFFF  # Ensure positive for bit ops
+    return (h & 0xFFFFFFFF) ^ ((h >> 32) & 0xFFFFFFFF)
+
+
+class _ArrayNode:
+    """Dense HAMT node with 32 slots, used when a BitmapNode has >16 children.
+
+    Each slot is either None (empty) or a subnode/_BitmapNode.
+    This avoids the overhead of bitmap indexing for dense nodes.
+    """
+    __slots__ = ('array', 'count')
+
+    def __init__(self, count, array):
+        self.count = count  # Number of non-None entries
+        self.array = array  # list of 32 entries (None or (key, val) or subnode)
+
+    def find(self, shift, hash_val, key):
+        idx = (hash_val >> shift) & MASK
+        entry = self.array[idx]
+        if entry is None:
+            raise KeyError(key)
+        if isinstance(entry, tuple):
+            # Leaf entry: (key, value)
+            if entry[0] == key:
+                return entry[1]
+            raise KeyError(key)
+        # Subnode
+        return entry.find(shift + BITS_PER_LEVEL, hash_val, key)
+
+    def assoc(self, shift, hash_val, key, value):
+        idx = (hash_val >> shift) & MASK
+        entry = self.array[idx]
+
+        if entry is None:
+            # Empty slot — insert leaf
+            new_array = list(self.array)
+            new_array[idx] = (key, value)
+            return _ArrayNode(self.count + 1, new_array), True
+
+        if isinstance(entry, tuple):
+            existing_key, existing_val = entry
+            if existing_key == key:
+                if existing_val is value:
+                    return self, False
+                new_array = list(self.array)
+                new_array[idx] = (key, value)
+                return _ArrayNode(self.count, new_array), False
+            # Collision at this slot — create subnode
+            existing_hash = _hash_fold(hash(existing_key))
+            subnode = _create_node(
+                shift + BITS_PER_LEVEL,
+                existing_hash, existing_key, existing_val,
+                hash_val, key, value,
+            )
+            new_array = list(self.array)
+            new_array[idx] = subnode
+            return _ArrayNode(self.count, new_array), True
+
+        # Subnode — recurse
+        new_node, added = entry.assoc(shift + BITS_PER_LEVEL, hash_val, key, value)
+        if new_node is entry:
+            return self, False
+        new_array = list(self.array)
+        new_array[idx] = new_node
+        return _ArrayNode(self.count, new_array), added
+
+    def without(self, shift, hash_val, key):
+        idx = (hash_val >> shift) & MASK
+        entry = self.array[idx]
+
+        if entry is None:
+            raise KeyError(key)
+
+        if isinstance(entry, tuple):
+            if entry[0] != key:
+                raise KeyError(key)
+            # Remove this leaf
+            new_count = self.count - 1
+            if new_count < _ARRAY_NODE_THRESHOLD:
+                return self._pack(idx)
+            new_array = list(self.array)
+            new_array[idx] = None
+            return _ArrayNode(new_count, new_array)
+
+        # Subnode — recurse
+        new_node = entry.without(shift + BITS_PER_LEVEL, hash_val, key)
+        if new_node is entry:
+            return self
+        if new_node is None:
+            new_count = self.count - 1
+            if new_count < _ARRAY_NODE_THRESHOLD:
+                return self._pack(idx)
+            new_array = list(self.array)
+            new_array[idx] = None
+            return _ArrayNode(new_count, new_array)
+        new_array = list(self.array)
+        new_array[idx] = new_node
+        return _ArrayNode(self.count, new_array)
+
+    def _pack(self, exclude_idx):
+        """Pack back into a BitmapNode when count drops below threshold."""
+        new_array = []
+        bitmap = 0
+        for i in range(BRANCH_FACTOR):
+            if i == exclude_idx:
+                continue
+            entry = self.array[i]
+            if entry is not None:
+                bitmap |= (1 << i)
+                if isinstance(entry, tuple):
+                    new_array.extend(entry)  # key, value
+                else:
+                    new_array.extend((None, entry))  # subnode
+        return _BitmapNode(bitmap, tuple(new_array))
+
+    def items(self):
+        for entry in self.array:
+            if entry is None:
+                continue
+            if isinstance(entry, tuple):
+                yield entry
+            else:
+                yield from entry.items()
 
 
 class _BitmapNode:
@@ -48,23 +178,23 @@ class _BitmapNode:
 
             if key_or_none is None:
                 # Subnode — recurse
-                new_node = val_or_node.assoc(shift + BITS_PER_LEVEL, hash_val, key, value)
+                new_node, added = val_or_node.assoc(shift + BITS_PER_LEVEL, hash_val, key, value)
                 if new_node is val_or_node:
-                    return self
+                    return self, False
                 new_array = list(self.array)
                 new_array[2 * idx + 1] = new_node
-                return _BitmapNode(self.bitmap, tuple(new_array))
+                return _BitmapNode(self.bitmap, tuple(new_array)), added
 
             if key_or_none == key:
                 # Same key — update value
                 if val_or_node is value:
-                    return self
+                    return self, False
                 new_array = list(self.array)
                 new_array[2 * idx + 1] = value
-                return _BitmapNode(self.bitmap, tuple(new_array))
+                return _BitmapNode(self.bitmap, tuple(new_array)), False
 
             # Hash collision at this level — create subnode
-            existing_hash = hash(key_or_none) & 0xFFFFFFFF
+            existing_hash = _hash_fold(hash(key_or_none))
             new_node = _create_node(
                 shift + BITS_PER_LEVEL,
                 existing_hash, key_or_none, val_or_node,
@@ -73,13 +203,38 @@ class _BitmapNode:
             new_array = list(self.array)
             new_array[2 * idx] = None
             new_array[2 * idx + 1] = new_node
-            return _BitmapNode(self.bitmap, tuple(new_array))
+            return _BitmapNode(self.bitmap, tuple(new_array)), True
 
         else:
             # New slot
+            n = _popcount(self.bitmap)
+            if n >= _ARRAY_NODE_THRESHOLD:
+                # Promote to ArrayNode
+                return self._promote_to_array_node(shift, bit, idx, key, value, hash_val)
+
             new_array = list(self.array)
             new_array[2 * idx:2 * idx] = [key, value]
-            return _BitmapNode(self.bitmap | bit, tuple(new_array))
+            return _BitmapNode(self.bitmap | bit, tuple(new_array)), True
+
+    def _promote_to_array_node(self, shift, new_bit, new_idx, key, value, hash_val):
+        """Promote this BitmapNode to an ArrayNode when it exceeds threshold."""
+        array = [None] * BRANCH_FACTOR
+        j = 0
+        for i in range(BRANCH_FACTOR):
+            if self.bitmap & (1 << i):
+                k = self.array[2 * j]
+                v = self.array[2 * j + 1]
+                if k is None:
+                    # Subnode
+                    array[i] = v
+                else:
+                    array[i] = (k, v)
+                j += 1
+        # Insert the new key
+        slot = (hash_val >> shift) & MASK
+        array[slot] = (key, value)
+        count = _popcount(self.bitmap) + 1
+        return _ArrayNode(count, array), True
 
     def without(self, shift, hash_val, key):
         bit = 1 << ((hash_val >> shift) & MASK)
@@ -167,15 +322,15 @@ class _CollisionNode:
             for i, (k, v) in enumerate(self.pairs):
                 if k == key:
                     if v is value:
-                        return self
+                        return self, False
                     new_pairs = list(self.pairs)
                     new_pairs[i] = (key, value)
-                    return _CollisionNode(self.hash_val, tuple(new_pairs))
-            return _CollisionNode(self.hash_val, self.pairs + ((key, value),))
+                    return _CollisionNode(self.hash_val, tuple(new_pairs)), False
+            return _CollisionNode(self.hash_val, self.pairs + ((key, value),)), True
         # Different hash — need to elevate to bitmap node
         node = _BitmapNode(0, ())
         for k, v in self.pairs:
-            node = node.assoc(shift, self.hash_val & 0xFFFFFFFF, k, v)
+            node, _ = node.assoc(shift, self.hash_val & 0xFFFFFFFF, k, v)
         return node.assoc(shift, hash_val, key, value)
 
     def without(self, shift, hash_val, key):

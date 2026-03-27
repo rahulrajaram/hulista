@@ -4,12 +4,15 @@ import pytest
 from persistent_collections._hamt import (
     _BitmapNode,
     _CollisionNode,
+    _ArrayNode,
     _create_node,
     _popcount,
+    _hash_fold,
     EMPTY_BITMAP_NODE,
     BITS_PER_LEVEL,
     BRANCH_FACTOR,
     MASK,
+    _ARRAY_NODE_THRESHOLD,
 )
 
 
@@ -32,6 +35,21 @@ class TestPopcount:
             assert _popcount(1 << i) == 1
 
 
+class TestHashFold:
+    def test_small_positive(self):
+        # Small integers should remain unchanged (upper 32 bits are zero)
+        assert _hash_fold(42) == 42
+
+    def test_negative_hash(self):
+        # Should produce a 32-bit result
+        result = _hash_fold(-1)
+        assert 0 <= result < 2**32
+
+    def test_large_value(self):
+        result = _hash_fold(0x1234567890ABCDEF)
+        assert 0 <= result < 2**32
+
+
 class TestConstants:
     def test_branch_factor(self):
         assert BRANCH_FACTOR == 32
@@ -52,50 +70,54 @@ class TestEmptyBitmapNode:
         assert list(EMPTY_BITMAP_NODE.items()) == []
 
     def test_assoc_returns_new_node(self):
-        node = EMPTY_BITMAP_NODE.assoc(0, hash('a') & 0xFFFFFFFF, 'a', 1)
+        node, added = EMPTY_BITMAP_NODE.assoc(0, _hash_fold(hash('a')), 'a', 1)
         assert node is not EMPTY_BITMAP_NODE
-        assert node.find(0, hash('a') & 0xFFFFFFFF, 'a') == 1
+        assert added is True
+        assert node.find(0, _hash_fold(hash('a')), 'a') == 1
 
 
 class TestBitmapNodeAssoc:
     def test_insert_single(self):
-        h = hash('key') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h, 'key', 'val')
+        h = _hash_fold(hash('key'))
+        node, added = EMPTY_BITMAP_NODE.assoc(0, h, 'key', 'val')
+        assert added is True
         assert node.find(0, h, 'key') == 'val'
 
     def test_insert_two_different_hashes(self):
-        h1 = hash('alpha') & 0xFFFFFFFF
-        h2 = hash('beta') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h1, 'alpha', 1)
-        node = node.assoc(0, h2, 'beta', 2)
+        h1 = _hash_fold(hash('alpha'))
+        h2 = _hash_fold(hash('beta'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h1, 'alpha', 1)
+        node, _ = node.assoc(0, h2, 'beta', 2)
         assert node.find(0, h1, 'alpha') == 1
         assert node.find(0, h2, 'beta') == 2
 
     def test_update_existing_key(self):
-        h = hash('k') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h, 'k', 100)
-        node2 = node.assoc(0, h, 'k', 200)
+        h = _hash_fold(hash('k'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h, 'k', 100)
+        node2, added = node.assoc(0, h, 'k', 200)
+        assert added is False
         assert node2.find(0, h, 'k') == 200
         # Old node unchanged
         assert node.find(0, h, 'k') == 100
 
     def test_same_value_identity_noop(self):
         sentinel = object()
-        h = hash('k') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h, 'k', sentinel)
-        node2 = node.assoc(0, h, 'k', sentinel)
+        h = _hash_fold(hash('k'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h, 'k', sentinel)
+        node2, added = node.assoc(0, h, 'k', sentinel)
         assert node2 is node
+        assert added is False
 
     def test_items_single(self):
-        h = hash('x') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h, 'x', 99)
+        h = _hash_fold(hash('x'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h, 'x', 99)
         assert list(node.items()) == [('x', 99)]
 
     def test_items_multiple(self):
         node = EMPTY_BITMAP_NODE
         keys = ['alpha', 'beta', 'gamma', 'delta']
         for i, k in enumerate(keys):
-            node = node.assoc(0, hash(k) & 0xFFFFFFFF, k, i)
+            node, _ = node.assoc(0, _hash_fold(hash(k)), k, i)
         items = dict(node.items())
         for i, k in enumerate(keys):
             assert items[k] == i
@@ -113,23 +135,24 @@ class TestBitmapNodeAssoc:
         """
         h1, k1 = 1, 1    # hash(1) == 1
         h2, k2 = 33, 33  # hash(33) == 33; low-5 bits identical to h1
-        node = EMPTY_BITMAP_NODE.assoc(0, h1, k1, 'v1')
-        node2 = node.assoc(0, h2, k2, 'v2')
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h1, k1, 'v1')
+        node2, _ = node.assoc(0, h2, k2, 'v2')
         assert node2.find(0, h1, k1) == 'v1'
         assert node2.find(0, h2, k2) == 'v2'
 
 
 class TestBitmapNodeWithout:
     def test_remove_only_key(self):
-        h = hash('a') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h, 'a', 1)
+        h = _hash_fold(hash('a'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h, 'a', 1)
         result = node.without(0, h, 'a')
         assert result is None
 
     def test_remove_one_of_two_keys(self):
-        h1 = hash('a') & 0xFFFFFFFF
-        h2 = hash('b') & 0xFFFFFFFF
-        node = EMPTY_BITMAP_NODE.assoc(0, h1, 'a', 1).assoc(0, h2, 'b', 2)
+        h1 = _hash_fold(hash('a'))
+        h2 = _hash_fold(hash('b'))
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h1, 'a', 1)
+        node, _ = node.assoc(0, h2, 'b', 2)
         node2 = node.without(0, h1, 'a')
         assert node2 is not None
         with pytest.raises(KeyError):
@@ -139,7 +162,7 @@ class TestBitmapNodeWithout:
         assert node.find(0, h1, 'a') == 1
 
     def test_remove_missing_key_raises(self):
-        h = hash('x') & 0xFFFFFFFF
+        h = _hash_fold(hash('x'))
         with pytest.raises(KeyError):
             EMPTY_BITMAP_NODE.without(0, h, 'x')
 
@@ -153,11 +176,48 @@ class TestBitmapNodeWithout:
         """
         h1, k1 = 1, 1
         h2, k2 = 33, 33
-        node = EMPTY_BITMAP_NODE.assoc(0, h1, k1, 'v1').assoc(0, h2, k2, 'v2')
+        node, _ = EMPTY_BITMAP_NODE.assoc(0, h1, k1, 'v1')
+        node, _ = node.assoc(0, h2, k2, 'v2')
         node2 = node.without(0, h1, k1)
         with pytest.raises(KeyError):
             node2.find(0, h1, k1)
         assert node2.find(0, h2, k2) == 'v2'
+
+
+class TestArrayNode:
+    """Test ArrayNode promotion and operations."""
+
+    def test_promote_from_bitmap(self):
+        """Adding > 16 children to a BitmapNode should promote to ArrayNode."""
+        node = EMPTY_BITMAP_NODE
+        # Insert keys that map to different trie indices at shift=0
+        for i in range(20):
+            node, _ = node.assoc(0, i, i, f'v{i}')
+        # After 16+ children, should have promoted to ArrayNode
+        assert isinstance(node, _ArrayNode)
+        # Verify all entries
+        for i in range(20):
+            assert node.find(0, i, i) == f'v{i}'
+
+    def test_array_node_remove_demotes(self):
+        """Removing entries from an ArrayNode should demote back when below threshold."""
+        node = EMPTY_BITMAP_NODE
+        for i in range(20):
+            node, _ = node.assoc(0, i, i, f'v{i}')
+        assert isinstance(node, _ArrayNode)
+        # Remove entries to get below threshold
+        for i in range(6):
+            node = node.without(0, i, i)
+        # Should have demoted back to BitmapNode
+        assert isinstance(node, _BitmapNode)
+
+    def test_array_node_items(self):
+        node = EMPTY_BITMAP_NODE
+        for i in range(20):
+            node, _ = node.assoc(0, i, i, f'v{i}')
+        items = dict(node.items())
+        for i in range(20):
+            assert items[i] == f'v{i}'
 
 
 class TestCreateNode:
@@ -200,7 +260,8 @@ class TestCollisionNode:
 
     def test_assoc_new_key_same_hash(self):
         node = self._make()
-        node2 = node.assoc(0, 99999, 'k3', 'v3')
+        node2, added = node.assoc(0, 99999, 'k3', 'v3')
+        assert added is True
         assert isinstance(node2, _CollisionNode)
         assert node2.find(0, 99999, 'k3') == 'v3'
         # Original unchanged
@@ -209,14 +270,16 @@ class TestCollisionNode:
 
     def test_assoc_update_existing_same_hash(self):
         node = self._make()
-        node2 = node.assoc(0, 99999, 'k1', 'NEW')
+        node2, added = node.assoc(0, 99999, 'k1', 'NEW')
+        assert added is False
         assert node2.find(0, 99999, 'k1') == 'NEW'
         assert node.find(0, 99999, 'k1') == 'v1'
 
     def test_assoc_same_value_noop(self):
         node = self._make()
-        node2 = node.assoc(0, 99999, 'k1', 'v1')
+        node2, added = node.assoc(0, 99999, 'k1', 'v1')
         assert node2 is node
+        assert added is False
 
     def test_assoc_different_hash_elevates(self):
         """A _CollisionNode with hash 99999 should elevate to a _BitmapNode when
@@ -231,9 +294,10 @@ class TestCollisionNode:
         cnode = _CollisionNode(99999, ((99999, 'v1'), ('also_99999', 'v2')))
         # Use integer key 12345 so hash(12345)==12345 != 99999
         different_key = 12345
-        node2 = cnode.assoc(0, different_key, different_key, 'v_new')
-        # Should produce a BitmapNode
-        assert isinstance(node2, _BitmapNode)
+        node2, added = cnode.assoc(0, different_key, different_key, 'v_new')
+        assert added is True
+        # Should produce a BitmapNode (or ArrayNode if many)
+        assert not isinstance(node2, _CollisionNode)
         assert node2.find(0, 99999, 99999) == 'v1'
         assert node2.find(0, different_key, different_key) == 'v_new'
 
@@ -260,7 +324,8 @@ class TestCollisionNode:
 
     def test_assoc_three_pairs(self):
         node = _CollisionNode(999, (('a', 1), ('b', 2)))
-        node2 = node.assoc(0, 999, 'c', 3)
+        node2, added = node.assoc(0, 999, 'c', 3)
+        assert added is True
         assert isinstance(node2, _CollisionNode)
         assert len(node2.pairs) == 3
         assert node2.find(0, 999, 'c') == 3

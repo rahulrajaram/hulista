@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import collections.abc
-from persistent_collections._hamt import _BitmapNode, EMPTY_BITMAP_NODE
+from persistent_collections._hamt import _BitmapNode, EMPTY_BITMAP_NODE, _hash_fold
 
 
 class PersistentMap(collections.abc.Mapping):
@@ -33,20 +33,15 @@ class PersistentMap(collections.abc.Mapping):
         return m
 
     def set(self, key, value) -> PersistentMap:
-        hash_val = hash(key) & 0xFFFFFFFF
-        new_root = self._root.assoc(0, hash_val, key, value)
+        hash_val = _hash_fold(hash(key))
+        new_root, added = self._root.assoc(0, hash_val, key, value)
         if new_root is self._root:
             return self
-        # Check if key was new or replaced
-        try:
-            self._root.find(0, hash_val, key)
-            new_count = self._count  # Replacement
-        except KeyError:
-            new_count = self._count + 1  # New key
+        new_count = self._count + (1 if added else 0)
         return PersistentMap(new_root, new_count)
 
     def delete(self, key) -> PersistentMap:
-        hash_val = hash(key) & 0xFFFFFFFF
+        hash_val = _hash_fold(hash(key))
         new_root = self._root.without(0, hash_val, key)
         if new_root is None:
             return PersistentMap()
@@ -61,7 +56,7 @@ class PersistentMap(collections.abc.Mapping):
             return default
 
     def __getitem__(self, key):
-        hash_val = hash(key) & 0xFFFFFFFF
+        hash_val = _hash_fold(hash(key))
         return self._root.find(0, hash_val, key)
 
     def __contains__(self, key):
@@ -112,3 +107,80 @@ class PersistentMap(collections.abc.Mapping):
 
     def __delattr__(self, name):
         raise AttributeError("PersistentMap is immutable")
+
+    def transient(self) -> TransientMap:
+        """Return a mutable transient builder for batch construction.
+
+        Usage::
+
+            m = PersistentMap()
+            with m.transient() as t:
+                for k, v in data.items():
+                    t[k] = v
+            m2 = t.persistent()
+        """
+        return TransientMap(self)
+
+
+class TransientMap:
+    """Mutable builder for PersistentMap — batch construction without structural copies.
+
+    Use as a context manager or call .persistent() to freeze.
+    """
+    __slots__ = ('_root', '_count', '_frozen')
+
+    def __init__(self, source: PersistentMap | None = None):
+        if source is not None:
+            self._root = source._root
+            self._count = source._count
+        else:
+            self._root = EMPTY_BITMAP_NODE
+            self._count = 0
+        self._frozen = False
+
+    def _check_mutable(self):
+        if self._frozen:
+            raise RuntimeError("TransientMap has been frozen; call transient() again")
+
+    def __setitem__(self, key, value):
+        self._check_mutable()
+        hash_val = _hash_fold(hash(key))
+        new_root, added = self._root.assoc(0, hash_val, key, value)
+        self._root = new_root
+        if added:
+            self._count += 1
+
+    def __delitem__(self, key):
+        self._check_mutable()
+        hash_val = _hash_fold(hash(key))
+        new_root = self._root.without(0, hash_val, key)
+        if new_root is None:
+            self._root = EMPTY_BITMAP_NODE
+        else:
+            self._root = new_root
+        self._count -= 1
+
+    def __getitem__(self, key):
+        hash_val = _hash_fold(hash(key))
+        return self._root.find(0, hash_val, key)
+
+    def __contains__(self, key):
+        try:
+            self[key]
+            return True
+        except KeyError:
+            return False
+
+    def __len__(self):
+        return self._count
+
+    def persistent(self) -> PersistentMap:
+        """Freeze this transient and return an immutable PersistentMap."""
+        self._frozen = True
+        return PersistentMap(self._root, self._count)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass

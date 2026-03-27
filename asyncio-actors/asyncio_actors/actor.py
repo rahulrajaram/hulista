@@ -29,7 +29,7 @@ class ActorRef:
         The actor must call ``await self.reply(value)`` or return a value from
         ``on_message`` to resolve the future.
         """
-        reply_future: asyncio.Future[Any] = asyncio.get_event_loop().create_future()
+        reply_future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         envelope = _AskEnvelope(message, reply_future)
         await self._inbox.put(envelope)
         return await asyncio.wait_for(reply_future, timeout=timeout)
@@ -62,7 +62,6 @@ class Actor:
 
     inbox_size: int = 100
     overflow_policy: OverflowPolicy = OverflowPolicy.BLOCK
-    restart_policy: RestartPolicy = RestartPolicy()
 
     def __init__(self) -> None:
         self._inbox: Inbox[Any] = Inbox(
@@ -71,6 +70,18 @@ class Actor:
         self._running = False
         self._task: asyncio.Task[None] | None = None
         self._reply_future: asyncio.Future[Any] | None = None
+        # Per-instance restart policy to avoid shared mutable state.
+        # If the subclass defined its own restart_policy as a class attribute,
+        # we clone it so _restart_times is not shared across instances.
+        if 'restart_policy' not in self.__dict__:
+            cls_policy = type(self).__dict__.get('restart_policy', None)
+            if cls_policy is not None:
+                self.restart_policy = RestartPolicy(
+                    max_restarts=cls_policy.max_restarts,
+                    restart_window_seconds=cls_policy.restart_window_seconds,
+                )
+            else:
+                self.restart_policy = RestartPolicy()
 
     # ------------------------------------------------------------------
     # Lifecycle hooks — override in subclasses

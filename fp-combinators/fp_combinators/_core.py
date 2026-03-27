@@ -1,5 +1,7 @@
 """Lightweight FP combinators for Python."""
 from __future__ import annotations
+
+import asyncio
 from typing import TypeVar, Callable, Any
 
 T = TypeVar('T')
@@ -79,3 +81,20 @@ def pipeline(*funcs: Callable) -> Callable:
         getattr(f, '__qualname__', repr(f)) for f in funcs
     )
     return _pipeline
+
+
+async def async_pipe(value: Any, /, *funcs: Callable) -> Any:
+    """Thread a value through functions left-to-right, awaiting coroutines.
+
+    Like pipe(), but transparently handles both sync and async functions.
+    If a function returns a coroutine, it is awaited before passing to the next.
+
+    async_pipe(x, sync_fn, async_fn, sync_fn) works seamlessly.
+    """
+    for f in funcs:
+        result = f(value)
+        if asyncio.iscoroutine(result):
+            value = await result
+        else:
+            value = result
+    return value

@@ -25,6 +25,10 @@ class VersionedContext:
         """Restore handlers to the state before this context was entered."""
         if self._snapshot is not None:
             self._dispatcher._handlers = list(self._snapshot)
+            self._dispatcher._cache.clear()
+            self._dispatcher._has_predicates = any(
+                h.predicate is not None for h in self._dispatcher._handlers
+            )
 
 
 def versioned(dispatcher):

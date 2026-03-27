@@ -1,7 +1,7 @@
 """Runtime-extensible dispatch system with multiple dispatch support."""
 from __future__ import annotations
 
-import functools
+import asyncio
 import inspect
 from typing import Any, Callable, get_type_hints
 
@@ -14,6 +14,7 @@ class Dispatcher:
     - Multiple dispatch on multiple argument types
     - Runtime handler registration (agents can add handlers dynamically)
     - Handler listing and introspection
+    - O(1) amortized dispatch via type-signature cache
 
     Usage:
         dispatch = Dispatcher("process")
@@ -34,6 +35,8 @@ class Dispatcher:
         self._name = name
         self._handlers: list[_Handler] = []
         self._fallback: Callable | None = None
+        self._cache: dict[tuple[type, ...], _Handler | None] = {}
+        self._has_predicates = False
 
     def register(self, func: Callable | None = None, *, priority: int = 0) -> Callable:
         """Register a handler function. Can be used as decorator or called directly.
@@ -42,6 +45,7 @@ class Dispatcher:
         """
         def decorator(fn: Callable) -> Callable:
             hints = {}
+            sig = None
             try:
                 sig = inspect.signature(fn)
                 hints = get_type_hints(fn)
@@ -49,16 +53,30 @@ class Dispatcher:
                 pass
 
             type_spec = {}
-            for param_name, param in sig.parameters.items():
+            if sig is None:
+                # Can't introspect — register with empty type_spec
+                pred = getattr(fn, '__dispatch_predicate__', None)
+                if pred is not None:
+                    self._has_predicates = True
+                handler = _Handler(fn, type_spec, priority=priority, predicate=pred)
+                self._handlers.append(handler)
+                self._handlers.sort(key=lambda h: -h.priority)
+                self._cache.clear()
+                return fn
+
+            for param_name, _ in sig.parameters.items():
                 if param_name in hints and hints[param_name] is not inspect.Parameter.empty:
                     ann = hints[param_name]
                     if isinstance(ann, type):
                         type_spec[param_name] = ann
 
             pred = getattr(fn, '__dispatch_predicate__', None)
+            if pred is not None:
+                self._has_predicates = True
             handler = _Handler(fn, type_spec, priority=priority, predicate=pred)
             self._handlers.append(handler)
             self._handlers.sort(key=lambda h: -h.priority)
+            self._cache.clear()
             return fn
 
         if func is not None:
@@ -72,9 +90,33 @@ class Dispatcher:
 
     def __call__(self, *args, **kwargs) -> Any:
         """Dispatch to the best matching handler."""
-        for handler in self._handlers:
-            if handler.matches(args, kwargs):
-                return handler.func(*args, **kwargs)
+        # Use cache only for positional-only calls without predicates
+        if not kwargs and not self._has_predicates:
+            key = tuple(type(a) for a in args)
+            cached = self._cache.get(key, _SENTINEL)
+            if cached is not _SENTINEL:
+                if cached is not None:
+                    return cached.func(*args)
+                # cached is None means no handler matched — fall through to fallback
+                if self._fallback is not None:
+                    return self._fallback(*args)
+                raise TypeError(
+                    f"No handler in dispatcher '{self._name}' matches "
+                    f"arguments: {_format_args(args, kwargs)}"
+                )
+
+            # Cache miss — find handler and cache
+            for handler in self._handlers:
+                if handler.matches(args, kwargs):
+                    self._cache[key] = handler
+                    return handler.func(*args, **kwargs)
+
+            # No handler matched — cache the miss too
+            self._cache[key] = None
+        else:
+            for handler in self._handlers:
+                if handler.matches(args, kwargs):
+                    return handler.func(*args, **kwargs)
 
         if self._fallback is not None:
             return self._fallback(*args, **kwargs)
@@ -99,14 +141,68 @@ class Dispatcher:
     def unregister(self, func: Callable) -> None:
         """Remove a handler by function reference."""
         self._handlers = [h for h in self._handlers if h.func is not func]
+        self._cache.clear()
 
     def clear(self) -> None:
         """Remove all handlers."""
         self._handlers.clear()
         self._fallback = None
+        self._cache.clear()
+
+    async def call_async(self, *args, **kwargs) -> Any:
+        """Async dispatch — calls the handler and awaits if it returns a coroutine."""
+        for handler in self._handlers:
+            if handler.matches(args, kwargs):
+                result = handler.func(*args, **kwargs)
+                if asyncio.iscoroutine(result):
+                    return await result
+                return result
+
+        if self._fallback is not None:
+            result = self._fallback(*args, **kwargs)
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+
+        raise TypeError(
+            f"No handler in dispatcher '{self._name}' matches "
+            f"arguments: {_format_args(args, kwargs)}"
+        )
+
+    def verify_exhaustive(self, sealed_base: type) -> None:
+        """Assert that registered handlers cover all sealed subclasses.
+
+        Args:
+            sealed_base: A class decorated with @sealed from sealed_typing.
+
+        Raises:
+            TypeError: If the sealed base has subclasses not covered by handlers,
+                       or if sealed_base is not a sealed class.
+        """
+        if not getattr(sealed_base, '__sealed__', False):
+            raise TypeError(f"'{sealed_base.__qualname__}' is not a sealed class")
+
+        sealed_subs = frozenset(getattr(sealed_base, '__sealed_subclasses__', set()))
+        covered_types = set()
+        for h in self._handlers:
+            for typ in h.type_spec.values():
+                if isinstance(typ, type):
+                    covered_types.add(typ)
+
+        missing = sealed_subs - covered_types
+        if missing:
+            missing_names = ', '.join(sorted(c.__qualname__ for c in missing))
+            raise TypeError(
+                f"Dispatcher '{self._name}' does not cover all subclasses of "
+                f"sealed class '{sealed_base.__qualname__}'. "
+                f"Missing: {missing_names}"
+            )
 
     def __repr__(self) -> str:
         return f"Dispatcher('{self._name}', handlers={len(self._handlers)})"
+
+
+_SENTINEL = object()
 
 
 class _Handler:
@@ -128,9 +224,6 @@ class _Handler:
 
         if not self.type_spec:
             return True
-
-        sig = inspect.signature(self.func)
-        params = list(sig.parameters.keys())
 
         for i, (param_name, expected_type) in enumerate(self.type_spec.items()):
             if param_name in kwargs:
