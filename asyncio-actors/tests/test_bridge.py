@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 import threading
 import pytest
 
@@ -14,8 +15,16 @@ def bridge_and_loop():
     """Create an event loop running in a background thread with a bridge."""
     loop = asyncio.new_event_loop()
     bridge = PersistentBridge(loop)
-    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    ready = threading.Event()
+
+    def run_loop():
+        asyncio.set_event_loop(loop)
+        ready.set()
+        loop.run_forever()
+
+    thread = threading.Thread(target=run_loop, daemon=True)
     thread.start()
+    assert ready.wait(timeout=1.0)
     yield bridge, loop
     loop.call_soon_threadsafe(loop.stop)
     thread.join(timeout=5)
@@ -53,6 +62,20 @@ def test_call_multiple(bridge_and_loop):
     import time
     time.sleep(0.2)
     assert sorted(results) == [0, 1, 2, 3, 4]
+
+
+def test_call_logs_exceptions(bridge_and_loop, caplog):
+    bridge, loop = bridge_and_loop
+
+    async def boom():
+        raise ValueError("fire and forget exploded")
+
+    with caplog.at_level(logging.ERROR):
+        bridge.call(boom)
+        import time
+        time.sleep(0.1)
+
+    assert "PersistentBridge.call() task failed" in caplog.text
 
 
 # ---------------------------------------------------------------------------

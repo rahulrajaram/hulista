@@ -73,6 +73,13 @@ class PersistentMap(collections.abc.Mapping):
         for k, v in self._root.items():
             yield k
 
+    def items(self):
+        return self._root.items()
+
+    def values(self):
+        for _, value in self._root.items():
+            yield value
+
     def __hash__(self):
         h = self._hash
         if h is None:

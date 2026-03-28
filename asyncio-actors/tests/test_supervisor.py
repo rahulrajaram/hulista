@@ -6,9 +6,11 @@ import asyncio
 import pytest
 
 from asyncio_actors.actor import Actor
+from asyncio_actors.supervision import SupervisionStrategy
 from asyncio_actors.supervisor import (
     Supervisor, ChildSpec, SupervisorStrategy, RestartType,
 )
+import asyncio_actors.supervisor as supervisor_module
 
 
 class StableWorker(Actor):
@@ -45,6 +47,42 @@ class AlwaysCrashWorker(Actor):
 
     async def on_message(self, msg):
         return msg
+
+
+class CrashOnMessageOnceWorker(Actor):
+    """Crash on the first crash message, then keep processing."""
+    start_count = 0
+    crashed = False
+    processed: list[str] = []
+
+    async def on_start(self):
+        type(self).start_count += 1
+
+    async def on_message(self, msg):
+        if msg == "crash" and not type(self).crashed:
+            type(self).crashed = True
+            raise RuntimeError("boom")
+        type(self).processed.append(msg)
+        return msg
+
+    async def on_error(self, error):
+        return SupervisionStrategy.ESCALATE
+
+
+class CrashOnStartThreeTimesWorker(Actor):
+    """Crash three starts in a row so backoff should grow exponentially."""
+    start_count = 0
+
+    async def on_start(self):
+        type(self).start_count += 1
+        if type(self).start_count <= 3:
+            raise RuntimeError("boom")
+
+    async def on_message(self, msg):
+        return msg
+
+    async def on_error(self, error):
+        return SupervisionStrategy.ESCALATE
 
 
 # --- OneForOne tests ---
@@ -102,6 +140,75 @@ class TestOneForOne:
         s2 = App2()
         s1.children_specs.append(ChildSpec(StableWorker))
         assert len(s2.children_specs) == 1
+
+    @pytest.mark.asyncio
+    async def test_stale_ref_keeps_queue_and_sends_after_restart(self):
+        CrashOnMessageOnceWorker.start_count = 0
+        CrashOnMessageOnceWorker.crashed = False
+        CrashOnMessageOnceWorker.processed = []
+
+        class App(Supervisor):
+            strategy = SupervisorStrategy.ONE_FOR_ONE
+            children_specs = [ChildSpec(CrashOnMessageOnceWorker)]
+
+        sup = App()
+        task = asyncio.create_task(sup._run())
+        await asyncio.sleep(0.05)
+        ref = sup.child_refs()[0]
+
+        await ref.send("crash")
+        await ref.send("queued-before-restart")
+        await asyncio.sleep(0.2)
+        await ref.send("sent-after-restart")
+        await asyncio.sleep(0.1)
+
+        assert CrashOnMessageOnceWorker.start_count >= 2
+        assert CrashOnMessageOnceWorker.processed == [
+            "queued-before-restart",
+            "sent-after-restart",
+        ]
+        assert ref.is_alive is True
+
+        await sup.stop()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    @pytest.mark.asyncio
+    async def test_backoff_grows_across_restarts(self, monkeypatch):
+        CrashOnStartThreeTimesWorker.start_count = 0
+        delays: list[float] = []
+        real_sleep = asyncio.sleep
+
+        async def record_sleep(delay: float):
+            delays.append(delay)
+            await real_sleep(0)
+
+        monkeypatch.setattr(supervisor_module, "_sleep", record_sleep)
+
+        class App(Supervisor):
+            strategy = SupervisorStrategy.ONE_FOR_ONE
+            children_specs = [ChildSpec(CrashOnStartThreeTimesWorker)]
+
+        sup = App()
+        task = asyncio.create_task(sup._run())
+
+        for _ in range(50):
+            if CrashOnStartThreeTimesWorker.start_count >= 4:
+                break
+            await asyncio.sleep(0.01)
+
+        assert CrashOnStartThreeTimesWorker.start_count >= 4
+        assert delays[:3] == [0.1, 0.2, 0.4]
+
+        await sup.stop()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 # --- Temporary restart type ---

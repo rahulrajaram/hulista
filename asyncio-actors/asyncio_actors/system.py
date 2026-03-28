@@ -7,7 +7,6 @@ import logging
 from typing import Any
 
 from asyncio_actors.actor import Actor, ActorRef
-from asyncio_actors.inbox import Inbox
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +58,12 @@ class ActorSystem:
         ``on_start`` will have had one event-loop iteration to begin running by
         the time this coroutine returns.
         """
+        if not self._running:
+            raise RuntimeError("ActorSystem must be entered before spawning actors")
         actor = actor_cls(*args, **kwargs)
         task: asyncio.Task[None] = asyncio.create_task(
-            self._supervise(actor), name=f"actor-{type(actor).__name__}"
+            self._supervise(actor_cls, args, kwargs, actor),
+            name=f"actor-{type(actor).__name__}",
         )
         self._actors[actor] = task
         # Yield control so that on_start() has a chance to run before the
@@ -69,7 +71,13 @@ class ActorSystem:
         await asyncio.sleep(0)
         return actor.ref()
 
-    async def _supervise(self, actor: Actor) -> None:
+    async def _supervise(
+        self,
+        actor_cls: type[Actor],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        actor: Actor,
+    ) -> None:
         """Supervision loop: restart the actor according to its restart policy."""
         policy = actor.restart_policy
         consecutive_failures = 0
@@ -94,15 +102,15 @@ class ActorSystem:
                     if not self._running:
                         break
 
-                    # Drain old inbox messages into the new inbox
-                    old_inbox = actor._inbox
-                    actor._running = False
-                    new_inbox = Inbox(
-                        maxsize=actor.inbox_size,
-                        policy=actor.overflow_policy,
-                    )
-                    old_inbox.drain_into(new_inbox)
-                    actor._inbox = new_inbox
+                    new_actor = actor_cls(*args, **kwargs)
+                    new_actor.restart_policy = policy
+                    if not actor._inbox._closed:
+                        new_actor._inbox = actor._inbox
+                    actor._ref_target = new_actor
+                    task = self._actors.pop(actor, None)
+                    if task is not None:
+                        self._actors[new_actor] = task
+                    actor = new_actor
                     continue
                 else:
                     logger.error(

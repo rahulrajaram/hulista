@@ -1,5 +1,6 @@
 import pytest
 from dataclasses import dataclass
+from pydantic import Field, PrivateAttr
 from with_update import updatable, with_update
 
 
@@ -65,6 +66,11 @@ class TestStandaloneWithUpdate:
         p2 = with_update(p, x=10)
         assert p2 == Point(10, 2)
 
+    def test_standalone_invalid_field_raises(self):
+        p = Point(1, 2)
+        with pytest.raises(TypeError):
+            with_update(p, z=3)
+
     def test_non_dataclass_raises(self):
         with pytest.raises(TypeError):
             with_update("not a dataclass", x=1)
@@ -76,6 +82,26 @@ class TestDecoratorValidation:
             @updatable
             class NotADataclass:
                 pass
+
+    def test_existing_or_raises(self):
+        with pytest.raises(TypeError, match="overwrite existing __or__"):
+            @updatable
+            @dataclass(frozen=True)
+            class AlreadyOr:
+                x: int
+
+                def __or__(self, other):
+                    return self
+
+    def test_existing_with_update_raises(self):
+        with pytest.raises(TypeError, match="overwrite existing with_update"):
+            @updatable
+            @dataclass(frozen=True)
+            class AlreadyMethod:
+                x: int
+
+                def with_update(self, **changes):
+                    return self
 
 
 # ---------------------------------------------------------------------------
@@ -153,5 +179,115 @@ class TestPydanticUpdatable:
             host: str = "localhost"
 
         cfg = Config()
-        with pytest.raises((TypeError, Exception)):
+        with pytest.raises(TypeError):
             cfg | {"nonexistent": 42}
+
+    def test_pydantic_operator_validates_and_coerces(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            port: int = 8080
+
+        cfg = Config()
+        cfg2 = cfg | {"port": "9090"}
+        assert cfg2.port == 9090
+        assert type(cfg2.port) is int
+
+    def test_pydantic_operator_invalid_type_raises(self):
+        from pydantic import BaseModel, ValidationError
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            port: int = 8080
+
+        cfg = Config()
+        with pytest.raises(ValidationError):
+            cfg | {"port": "not-a-port"}
+
+    def test_pydantic_standalone_helper_matches_operator_validation(self):
+        from pydantic import BaseModel, ValidationError
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            port: int = 8080
+
+        cfg = Config()
+        cfg2 = with_update(cfg, port="9091")
+        assert cfg2.port == 9091
+        assert type(cfg2.port) is int
+
+        with pytest.raises(ValidationError):
+            with_update(cfg, port="nope")
+
+    def test_pydantic_standalone_invalid_field_raises(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = "localhost"
+
+        cfg = Config()
+        with pytest.raises(TypeError):
+            with_update(cfg, nonexistent=42)
+
+    def test_pydantic_alias_updates_use_alias_keys(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str = Field(alias="HOST")
+
+        cfg = Config(HOST="localhost")
+        cfg2 = cfg | {"HOST": "0.0.0.0"}
+        assert cfg2.host == "0.0.0.0"
+
+        with pytest.raises(TypeError):
+            cfg | {"host": "not-allowed-by-name"}
+
+    def test_pydantic_populate_by_name_accepts_field_names(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True, "populate_by_name": True}
+            host: str = Field(alias="HOST")
+
+        cfg = Config(HOST="localhost")
+        cfg2 = cfg.with_update(host="0.0.0.0")
+        assert cfg2.host == "0.0.0.0"
+
+    def test_pydantic_private_attrs_are_preserved(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str
+            _secret: str = PrivateAttr(default="keep")
+
+        cfg = Config(host="localhost")
+        cfg._secret = "custom"
+        cfg2 = cfg.with_update(host="0.0.0.0")
+        assert cfg2._secret == "custom"
+
+    def test_pydantic_fields_set_is_preserved_and_extended(self):
+        from pydantic import BaseModel
+
+        @updatable
+        class Config(BaseModel):
+            model_config = {"frozen": True}
+            host: str
+            port: int = 8080
+
+        cfg = Config(host="localhost")
+        assert cfg.model_fields_set == {"host"}
+
+        cfg2 = cfg.with_update(port=9090)
+        assert cfg2.model_fields_set == {"host", "port"}
+        assert cfg2.model_dump(exclude_unset=True) == {"host": "localhost", "port": 9090}

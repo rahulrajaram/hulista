@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 from persistent_collections._hamt import (
     _BitmapNode, _CollisionNode, _ArrayNode, _popcount,
-    BITS_PER_LEVEL, BRANCH_FACTOR,
+    BITS_PER_LEVEL, BRANCH_FACTOR, _keys_equal,
 )
 
 
@@ -39,7 +39,7 @@ class Change:
             return f"Change(MODIFIED, {self.key!r}, {self.old_value!r} -> {self.new_value!r})"
 
 
-def diff(m1, m2) -> Iterator[Change]:
+def diff(m1: Any, m2: Any) -> Iterator[Change]:
     """Compute the structural diff between two PersistentMaps.
 
     Yields Change objects for keys that were added, removed, or modified.
@@ -52,7 +52,7 @@ def diff(m1, m2) -> Iterator[Change]:
     yield from _diff_nodes(m1._root, m2._root, 0)
 
 
-def _yield_all(node, change_type) -> Iterator[Change]:
+def _yield_all(node: Any, change_type: ChangeType) -> Iterator[Change]:
     """Yield all entries in a node as ADDED or REMOVED."""
     for k, v in node.items():
         if change_type == ChangeType.ADDED:
@@ -61,7 +61,7 @@ def _yield_all(node, change_type) -> Iterator[Change]:
             yield Change(ChangeType.REMOVED, k, old_value=v)
 
 
-def _diff_nodes(n1, n2, shift) -> Iterator[Change]:
+def _diff_nodes(n1: Any, n2: Any, shift: int) -> Iterator[Change]:
     """Recursively diff two HAMT nodes using pairwise structural walk."""
     if n1 is n2:
         return  # Same identity — no changes
@@ -113,7 +113,7 @@ def _diff_bitmap_bitmap(n1: _BitmapNode, n2: _BitmapNode, shift: int) -> Iterato
                     yield from _diff_nodes(v1, v2, shift + BITS_PER_LEVEL)
             elif k1 is not None and k2 is not None:
                 # Both leaves
-                if k1 == k2:
+                if _keys_equal(k1, k2):
                     if v1 != v2:
                         yield Change(ChangeType.MODIFIED, k1, old_value=v1, new_value=v2)
                 else:
@@ -177,7 +177,7 @@ def _diff_array_array(n1: _ArrayNode, n2: _ArrayNode, shift: int) -> Iterator[Ch
                 yield from _yield_all(e1, ChangeType.REMOVED)
         elif isinstance(e1, tuple) and isinstance(e2, tuple):
             # Both leaves
-            if e1[0] == e2[0]:
+            if _keys_equal(e1[0], e2[0]):
                 if e1[1] != e2[1]:
                     yield Change(ChangeType.MODIFIED, e1[0], old_value=e1[1], new_value=e2[1])
             else:
@@ -198,29 +198,49 @@ def _diff_array_array(n1: _ArrayNode, n2: _ArrayNode, shift: int) -> Iterator[Ch
 
 def _diff_collision_collision(n1: _CollisionNode, n2: _CollisionNode) -> Iterator[Change]:
     """Diff two CollisionNodes."""
-    d1 = dict(n1.pairs)
-    d2 = dict(n2.pairs)
-    for k in set(d1) - set(d2):
-        yield Change(ChangeType.REMOVED, k, old_value=d1[k])
-    for k in set(d2) - set(d1):
-        yield Change(ChangeType.ADDED, k, new_value=d2[k])
-    for k in set(d1) & set(d2):
-        if d1[k] != d2[k]:
-            yield Change(ChangeType.MODIFIED, k, old_value=d1[k], new_value=d2[k])
+    used_in_n2: set[int] = set()
+    for k1, v1 in n1.pairs:
+        match_index = next(
+            (i for i, (k2, _) in enumerate(n2.pairs) if i not in used_in_n2 and _keys_equal(k1, k2)),
+            None,
+        )
+        if match_index is None:
+            yield Change(ChangeType.REMOVED, k1, old_value=v1)
+            continue
+        used_in_n2.add(match_index)
+        _, v2 = n2.pairs[match_index]
+        if v1 != v2:
+            yield Change(ChangeType.MODIFIED, k1, old_value=v1, new_value=v2)
+
+    for i, (k2, v2) in enumerate(n2.pairs):
+        if i not in used_in_n2:
+            yield Change(ChangeType.ADDED, k2, new_value=v2)
 
 
-def _diff_mixed(n1, n2, shift) -> Iterator[Change]:
+def _diff_mixed(n1: Any, n2: Any, shift: int) -> Iterator[Change]:
     """Diff two nodes of different types by materializing items.
 
     This is the fallback for mixed node types (e.g., BitmapNode vs ArrayNode).
     Still benefits from identity checks at higher levels.
     """
-    d1 = dict(n1.items())
-    d2 = dict(n2.items())
-    for k in set(d1) - set(d2):
-        yield Change(ChangeType.REMOVED, k, old_value=d1[k])
-    for k in set(d2) - set(d1):
-        yield Change(ChangeType.ADDED, k, new_value=d2[k])
-    for k in set(d1) & set(d2):
-        if d1[k] != d2[k]:
-            yield Change(ChangeType.MODIFIED, k, old_value=d1[k], new_value=d2[k])
+    del shift
+    items1 = list(n1.items())
+    items2 = list(n2.items())
+    used_in_n2: set[int] = set()
+
+    for k1, v1 in items1:
+        match_index = next(
+            (i for i, (k2, _) in enumerate(items2) if i not in used_in_n2 and _keys_equal(k1, k2)),
+            None,
+        )
+        if match_index is None:
+            yield Change(ChangeType.REMOVED, k1, old_value=v1)
+            continue
+        used_in_n2.add(match_index)
+        _, v2 = items2[match_index]
+        if v1 != v2:
+            yield Change(ChangeType.MODIFIED, k1, old_value=v1, new_value=v2)
+
+    for i, (k2, v2) in enumerate(items2):
+        if i not in used_in_n2:
+            yield Change(ChangeType.ADDED, k2, new_value=v2)

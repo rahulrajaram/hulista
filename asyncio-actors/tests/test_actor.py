@@ -4,10 +4,9 @@ from __future__ import annotations
 import asyncio
 import pytest
 
-from asyncio_actors.actor import Actor, ActorRef
+from asyncio_actors.actor import Actor
 from asyncio_actors.system import ActorSystem
 from asyncio_actors.supervision import SupervisionStrategy, RestartPolicy
-from asyncio_actors.inbox import OverflowPolicy
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +95,33 @@ class ReplyActor(Actor):
         # Return None; the reply was sent manually.
 
 
+class RestartOnceFreshActor(Actor):
+    """Crashes once, then proves system restarts use a fresh instance."""
+
+    restart_policy = RestartPolicy(max_restarts=2, restart_window_seconds=60.0)
+    crash_count = 0
+    processed: list[tuple[int, str]] = []
+
+    def __init__(self):
+        super().__init__()
+        self.start_count = 0
+
+    async def on_start(self):
+        self.start_count += 1
+
+    async def on_message(self, message):
+        if message == "crash" and type(self).crash_count == 0:
+            type(self).crash_count += 1
+            raise RuntimeError("crash once")
+        type(self).processed.append((self.start_count, message))
+        if message == "start_count":
+            return self.start_count
+        return message
+
+    async def on_error(self, error):
+        return SupervisionStrategy.ESCALATE
+
+
 # ---------------------------------------------------------------------------
 # Basic spawning and send
 # ---------------------------------------------------------------------------
@@ -115,7 +141,6 @@ async def test_spawn_and_send():
 
 @pytest.mark.asyncio
 async def test_lifecycle_on_start_on_stop():
-    actor = AccumulatorActor()
     async with ActorSystem() as system:
         ref = await system.spawn(AccumulatorActor)
         inner_actor = ref._actor
@@ -285,3 +310,64 @@ async def test_stop_via_ref():
         await ref._actor.stop()
         await asyncio.sleep(0.05)
         assert ref.is_alive is False
+
+
+@pytest.mark.asyncio
+async def test_system_restart_replaces_actor_instance():
+    RestartOnceFreshActor.crash_count = 0
+    RestartOnceFreshActor.processed = []
+
+    async with ActorSystem() as system:
+        ref = await system.spawn(RestartOnceFreshActor)
+        original_actor = ref._actor
+
+        await ref.send("crash")
+        await ref.send("queued-before-restart")
+        await asyncio.sleep(0.2)
+
+        assert original_actor._ref_target is not original_actor
+        restarted_actor = original_actor._ref_target
+        assert restarted_actor is not original_actor
+        assert await ref.ask("start_count") == 1
+        await ref.send("sent-after-restart")
+        await asyncio.sleep(0.05)
+
+        assert RestartOnceFreshActor.processed == [
+            (1, "queued-before-restart"),
+            (1, "start_count"),
+            (1, "sent-after-restart"),
+        ]
+
+
+@pytest.mark.asyncio
+async def test_spawn_requires_running_system():
+    system = ActorSystem()
+    with pytest.raises(RuntimeError, match="must be entered"):
+        await system.spawn(EchoActor)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_cancels_inflight_handler_and_runs_on_stop():
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+    stopped = asyncio.Event()
+
+    class BlockingActor(Actor):
+        async def on_message(self, message):
+            entered.set()
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        async def on_stop(self):
+            stopped.set()
+
+    async with ActorSystem() as system:
+        ref = await system.spawn(BlockingActor)
+        await ref.send("block")
+        await asyncio.wait_for(entered.wait(), timeout=1.0)
+
+    assert cancelled.is_set()
+    assert stopped.is_set()

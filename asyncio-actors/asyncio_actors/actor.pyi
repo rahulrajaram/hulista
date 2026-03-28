@@ -14,7 +14,7 @@ R = TypeVar('R')
 class ActorRef(Generic[M]):
     """Typed handle to a running actor for message passing."""
 
-    def __init__(self, actor: Actor[M], inbox: Inbox[Any]) -> None: ...
+    def __init__(self, actor: Actor[M]) -> None: ...
 
     async def send(self, message: M) -> None: ...
 
@@ -30,6 +30,11 @@ class Actor(Generic[M]):
     inbox_size: int
     overflow_policy: OverflowPolicy
     restart_policy: RestartPolicy
+    _inbox: Inbox[Any]
+    _running: bool
+    _reply_future: asyncio.Future[Any] | None
+    _ref_target: Actor[M]
+    _task: asyncio.Task[None] | None
 
     def __init__(self) -> None: ...
 
@@ -46,3 +51,5 @@ class Actor(Generic[M]):
     async def stop(self) -> None: ...
 
     def ref(self) -> ActorRef[M]: ...
+
+    async def _run(self) -> None: ...

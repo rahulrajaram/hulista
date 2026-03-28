@@ -1,6 +1,8 @@
 # persistent-collections
 
-Immutable persistent collections with structural sharing — `PersistentMap` and `PersistentVector` backed by a pure-Python HAMT, with transient builders and structural diffing.
+Immutable persistent collections with structural sharing — `PersistentMap` and
+`PersistentVector` backed by a pure-Python HAMT, with a mutable builder wrapper
+and structural diffing.
 
 ## Install
 
@@ -36,7 +38,8 @@ assert list(v3) == [99, 2, 3, 4]
 ```python
 from persistent_collections import PersistentMap
 
-# Mutable builder avoids structural copies during batch construction
+# Mutable builder gives dict-like batch-update ergonomics before freezing back
+# to an immutable map.
 m = PersistentMap()
 with m.transient() as t:
     for i in range(10_000):
@@ -82,7 +85,7 @@ for change in diff(m1, m2):
 
 | Method | Signature | Description |
 |---|---|---|
-| `t[key] = value` | — | Set a key (mutable, no structural copies) |
+| `t[key] = value` | — | Set a key on the mutable builder |
 | `del t[key]` | — | Delete a key |
 | `t[key]` | — | Lookup (raises `KeyError`) |
 | `.persistent()` | `() -> PersistentMap` | Freeze to immutable `PersistentMap` |
@@ -124,7 +127,9 @@ Benchmark (1000 keys, 10000 updates via `benchmarks/bench_memory.py`):
 | `dict.copy()` + mutate | ~0.25 s | ~490 MB |
 | `PersistentMap.set()` | ~0.60 s | ~27 MB |
 
-**~18x memory reduction** at the cost of ~2.4x wall-clock time. For workloads with many snapshots (undo history, event sourcing, concurrent reads), persistent collections dominate.
+This benchmark keeps only the current version alive, so treat it as a rough
+cost profile for repeated updates rather than a proof about every snapshot-heavy
+workload.
 
 ## Upstream context
 

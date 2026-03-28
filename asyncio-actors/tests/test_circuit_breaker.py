@@ -1,6 +1,7 @@
 """Tests for CircuitBreaker."""
 from __future__ import annotations
 
+import asyncio_actors.circuit_breaker as circuit_breaker_module
 
 from asyncio_actors.circuit_breaker import CircuitBreaker, CircuitState
 
@@ -87,6 +88,11 @@ class TestClosedBelowThreshold:
         cb.record_success()
         assert cb.allow_request(now=t(1)) is True
 
+    def test_allow_request_uses_monotonic_when_now_omitted(self, monkeypatch):
+        cb = make_breaker()
+        monkeypatch.setattr(circuit_breaker_module.time, "monotonic", lambda: t(0))
+        assert cb.allow_request() is True
+
 
 # ---------------------------------------------------------------------------
 # Transitions to OPEN after reaching threshold
@@ -114,6 +120,12 @@ class TestTransitionToOpen:
         cb = make_breaker(failure_threshold=2)
         for i in range(5):
             cb.record_failure(now=t(i))
+        assert cb.state == CircuitState.OPEN
+
+    def test_record_failure_uses_monotonic_when_now_omitted(self, monkeypatch):
+        cb = make_breaker(failure_threshold=1)
+        monkeypatch.setattr(circuit_breaker_module.time, "monotonic", lambda: t(0))
+        cb.record_failure()
         assert cb.state == CircuitState.OPEN
 
 
@@ -159,29 +171,21 @@ class TestTransitionToHalfOpen:
         assert cb.state == CircuitState.HALF_OPEN
 
     def test_half_open_allows_limited_probes(self):
-        # When transitioning OPEN -> HALF_OPEN, allow_request returns True but
-        # _half_open_calls is reset to 0 (not yet incremented).  The HALF_OPEN
-        # quota is consumed by the *next* call that takes the HALF_OPEN branch.
+        # The OPEN -> HALF_OPEN transition consumes the first recovery probe.
         cb = make_breaker(failure_threshold=1, recovery_timeout=10.0, half_open_max_calls=1)
         cb.record_failure(now=t(0))
-        # Transition call: OPEN -> HALF_OPEN, resets _half_open_calls=0, returns True
         assert cb.allow_request(now=t(10.0)) is True
         assert cb._state == CircuitState.HALF_OPEN
-        # First probe in HALF_OPEN: _half_open_calls 0 < 1, incremented to 1, allowed
-        assert cb.allow_request(now=t(10.01)) is True
-        # Quota exhausted: _half_open_calls 1 < 1 is False — rejected
-        assert cb.allow_request(now=t(10.02)) is False
+        assert cb._half_open_calls == 1
+        assert cb.allow_request(now=t(10.01)) is False
 
     def test_after_timeout_exactly_one_probe_allowed(self):
         cb = make_breaker(failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=1)
         cb.record_failure(now=t(0))
-        # Transition: OPEN -> HALF_OPEN; _half_open_calls reset to 0
         cb.allow_request(now=t(5.0))
         assert cb._state == CircuitState.HALF_OPEN
-        # One probe allowed (consumes the quota)
-        assert cb.allow_request(now=t(5.01)) is True
-        # No more probes
-        assert cb.allow_request(now=t(5.02)) is False
+        assert cb._half_open_calls == 1
+        assert cb.allow_request(now=t(5.01)) is False
 
 
 # ---------------------------------------------------------------------------
@@ -215,13 +219,19 @@ class TestHalfOpenToClosedOnSuccess:
             failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2
         )
         cb.record_failure(now=t(0))
-        cb.allow_request(now=t(5.0))   # -> HALF_OPEN, probe 1
+        cb.allow_request(now=t(5.0))   # -> HALF_OPEN, consumes probe 1
         cb.record_success()            # success count: 1 (need 2)
         # Should still be HALF_OPEN (not enough successes yet)
         assert cb._state == CircuitState.HALF_OPEN
         cb.allow_request(now=t(5.1))   # probe 2
         cb.record_success()            # success count: 2, -> CLOSED
         assert cb.state == CircuitState.CLOSED
+
+    def test_record_success_is_noop_when_open(self):
+        cb = make_breaker(failure_threshold=1)
+        cb.record_failure(now=t(0))
+        cb.record_success()
+        assert cb.state == CircuitState.OPEN
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +260,19 @@ class TestHalfOpenToOpenOnFailure:
         cb.record_failure(now=t(5.1))   # -> OPEN again
         # After another full timeout, should be able to try again
         assert cb.allow_request(now=t(10.2)) is True
+        assert cb._state == CircuitState.HALF_OPEN
+
+    def test_failure_in_half_open_resets_success_tracking_for_next_cycle(self):
+        cb = make_breaker(failure_threshold=1, recovery_timeout=5.0, half_open_max_calls=2)
+        cb.record_failure(now=t(0))
+        cb.allow_request(now=t(5.0))
+        cb.record_success()
+        cb.record_failure(now=t(5.1))
+
+        assert cb._success_count == 0
+        assert cb.allow_request(now=t(10.2)) is True
+        assert cb._half_open_calls == 1
+        cb.record_success()
         assert cb._state == CircuitState.HALF_OPEN
 
 

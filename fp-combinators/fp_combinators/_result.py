@@ -1,9 +1,10 @@
 """Result type for typed error handling without exceptions."""
 from __future__ import annotations
 
-import asyncio
+import inspect
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, TypeVar
+from collections.abc import Callable
+from typing import Any, Generic, TypeVar, cast
 
 T = TypeVar('T')
 E = TypeVar('E')
@@ -22,44 +23,49 @@ class Result(Generic[T, E]):
     def unwrap(self) -> T:
         """Return the Ok value, or raise if Err."""
         if isinstance(self, Ok):
-            return self.value
-        raise ValueError(f"Called unwrap() on Err: {self.error!r}")
+            ok = cast(Ok[T, E], self)
+            return ok.value
+        err = cast(Err[T, E], self)
+        raise ValueError(f"Called unwrap() on Err: {err.error!r}")
 
     def unwrap_or(self, default: T) -> T:
         """Return the Ok value, or a default if Err."""
         if isinstance(self, Ok):
-            return self.value
+            ok = cast(Ok[T, E], self)
+            return ok.value
         return default
 
     def unwrap_err(self) -> E:
         """Return the Err value, or raise if Ok."""
         if isinstance(self, Err):
-            return self.error
-        raise ValueError(f"Called unwrap_err() on Ok: {self.value!r}")
+            err = cast(Err[T, E], self)
+            return err.error
+        ok = cast(Ok[T, E], self)
+        raise ValueError(f"Called unwrap_err() on Ok: {ok.value!r}")
 
     def map(self, f: Callable[[T], U]) -> Result[U, E]:
         """Apply f to the Ok value, or pass through Err."""
         if isinstance(self, Ok):
             return Ok(f(self.value))
-        return self
+        return cast(Result[U, E], self)
 
     def map_err(self, f: Callable[[E], U]) -> Result[T, U]:
         """Apply f to the Err value, or pass through Ok."""
         if isinstance(self, Err):
             return Err(f(self.error))
-        return self
+        return cast(Result[T, U], self)
 
     def and_then(self, f: Callable[[T], Result[U, E]]) -> Result[U, E]:
         """Chain a computation that may fail (flatmap)."""
         if isinstance(self, Ok):
             return f(self.value)
-        return self
+        return cast(Result[U, E], self)
 
     def or_else(self, f: Callable[[E], Result[T, U]]) -> Result[T, U]:
         """Handle an Err by running an alternative computation."""
         if isinstance(self, Err):
             return f(self.error)
-        return self
+        return cast(Result[T, U], self)
 
     def __bool__(self) -> bool:
         return self.is_ok()
@@ -120,7 +126,7 @@ async def async_try_pipe(value: Any, /, *funcs: Callable) -> Result:
     for f in funcs:
         try:
             result = f(value)
-            if asyncio.iscoroutine(result):
+            if inspect.isawaitable(result):
                 value = await result
             else:
                 value = result

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 from live_dispatch import Dispatcher
@@ -85,6 +86,16 @@ def test_multiple_dispatch_kwargs():
     assert d(x=10, y="hi") == "10-hi"
 
 
+def test_dispatch_binds_keyword_only_arguments():
+    d = Dispatcher("kwonly")
+
+    @d.register
+    def handle(*, x: int, y: str = "hi") -> str:
+        return f"{x}-{y}"
+
+    assert d(x=10) == "10-hi"
+
+
 # ---------------------------------------------------------------------------
 # Runtime registration (not just decorator)
 # ---------------------------------------------------------------------------
@@ -112,6 +123,42 @@ def test_runtime_registration_with_priority():
     d.register(high_handler, priority=10)
 
     assert d(5) == "high"
+
+
+def test_register_rejects_any_annotation():
+    d = Dispatcher("bad_any")
+
+    with pytest.raises(TypeError, match="typing.Any"):
+        @d.register
+        def handle(x: Any) -> str:
+            return "bad"
+
+
+def test_register_rejects_union_annotation():
+    d = Dispatcher("bad_union")
+
+    with pytest.raises(TypeError, match="plain runtime classes"):
+        @d.register
+        def handle(x: int | str) -> str:
+            return "bad"
+
+
+def test_register_rejects_partial_required_annotations():
+    d = Dispatcher("partial")
+
+    with pytest.raises(TypeError, match="Untyped required parameter"):
+        @d.register
+        def handle(x, y: int) -> str:
+            return f"{x}-{y}"
+
+
+def test_register_rejects_unresolved_forward_ref():
+    d = Dispatcher("forward")
+
+    with pytest.raises(TypeError, match="could not resolve runtime annotations"):
+        @d.register
+        def handle(x: "DoesNotExist") -> str:  # noqa: F821
+            return "bad"
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +483,21 @@ async def test_call_async_async_fallback():
 
     result = await d.call_async("anything")
     assert result == "async_fallback"
+
+
+@pytest.mark.asyncio
+async def test_call_async_awaits_future_result():
+    d = Dispatcher("async_future")
+    loop = asyncio.get_running_loop()
+
+    @d.register
+    def handle_int(x: int):
+        fut = loop.create_future()
+        fut.set_result(f"future:{x}")
+        return fut
+
+    result = await d.call_async(4)
+    assert result == "future:4"
 
 
 # ---------------------------------------------------------------------------

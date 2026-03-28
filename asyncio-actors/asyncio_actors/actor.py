@@ -13,15 +13,25 @@ logger = logging.getLogger(__name__)
 
 class ActorRef:
     """Handle to a running actor for message passing."""
-    __slots__ = ('_actor', '_inbox')
+    __slots__ = ('_actor',)
 
-    def __init__(self, actor: Actor, inbox: Inbox[Any]) -> None:
+    def __init__(self, actor: Actor) -> None:
         self._actor = actor
-        self._inbox = inbox
+
+    def _target(self) -> Actor:
+        """Resolve the latest live actor for this logical ref chain."""
+        actor = self._actor
+        chain: list[Actor] = []
+        while actor._ref_target is not actor:
+            chain.append(actor)
+            actor = actor._ref_target
+        for previous in chain:
+            previous._ref_target = actor
+        return actor
 
     async def send(self, message: Any) -> None:
         """Fire-and-forget message delivery."""
-        await self._inbox.put(message)
+        await self._target()._inbox.put(message)
 
     async def ask(self, message: Any, timeout: float = 5.0) -> Any:
         """Send a message and await the actor's reply.
@@ -31,12 +41,12 @@ class ActorRef:
         """
         reply_future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
         envelope = _AskEnvelope(message, reply_future)
-        await self._inbox.put(envelope)
+        await self._target()._inbox.put(envelope)
         return await asyncio.wait_for(reply_future, timeout=timeout)
 
     @property
     def is_alive(self) -> bool:
-        return self._actor._running
+        return self._target()._running
 
 
 class _AskEnvelope:
@@ -68,6 +78,7 @@ class Actor:
             maxsize=self.inbox_size, policy=self.overflow_policy
         )
         self._running = False
+        self._ref_target: Actor = self
         self._task: asyncio.Task[None] | None = None
         self._reply_future: asyncio.Future[Any] | None = None
         # Per-instance restart policy to avoid shared mutable state.
@@ -123,10 +134,14 @@ class Actor:
         """Request a graceful shutdown of this actor."""
         self._running = False
         self._inbox.close()
+        task = self._task
+        current = asyncio.current_task()
+        if task is not None and task is not current and not task.done():
+            task.cancel()
 
     def ref(self) -> ActorRef:
         """Return an :class:`ActorRef` handle for message passing."""
-        return ActorRef(self, self._inbox)
+        return ActorRef(self)
 
     # ------------------------------------------------------------------
     # Internal run loop — managed by ActorSystem
@@ -135,6 +150,7 @@ class Actor:
     async def _run(self) -> None:
         """Main actor loop.  Called (and potentially restarted) by the system."""
         self._running = True
+        self._task = asyncio.current_task()
         try:
             await self.on_start()
             while self._running:
@@ -160,6 +176,10 @@ class Actor:
                     # reply() call was made yet.
                     if self._reply_future and not self._reply_future.done():
                         self._reply_future.set_result(result)
+                except asyncio.CancelledError:
+                    if self._running:
+                        raise
+                    break
                 except Exception as e:
                     if self._reply_future and not self._reply_future.done():
                         self._reply_future.set_exception(e)
@@ -170,6 +190,10 @@ class Actor:
                         raise
                     # RESTART strategy: continue the loop.  The on_error hook
                     # can reset internal state if needed.
+        except asyncio.CancelledError:
+            if self._running:
+                raise
         finally:
             self._running = False
+            self._task = None
             await self.on_stop()

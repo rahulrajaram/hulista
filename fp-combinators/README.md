@@ -1,6 +1,6 @@
 # fp-combinators
 
-Lightweight functional programming combinators for Python — `pipe`, `compose`, `first_some`, `pipeline`, `async_pipe`, and typed error handling with `Result`/`Ok`/`Err`.
+Lightweight functional programming combinators for Python — `pipe`, `compose`, `first_some`, `pipeline`, `async_pipe`, `try_pipe`, `async_try_pipe`, and typed error handling with `Result`/`Ok`/`Err`.
 
 ## Install
 
@@ -12,7 +12,7 @@ uv add fp-combinators
 
 ```python
 from fp_combinators import pipe, compose, first_some, pipeline, async_pipe
-from fp_combinators import Result, Ok, Err, try_pipe
+from fp_combinators import Result, Ok, Err, try_pipe, async_try_pipe
 
 # pipe: thread a value left-to-right
 result = pipe(
@@ -80,8 +80,14 @@ async def fetch(url: str) -> str:
 def parse(data: str) -> dict:
     return {"raw": data}
 
-# Transparently handles both sync and async functions
+# Transparently handles both sync functions and any awaitable result
 result = asyncio.run(async_pipe("https://example.com", fetch, parse))
+
+async def validate(data: dict) -> dict:
+    return data
+
+safe = asyncio.run(async_try_pipe("https://example.com", fetch, parse, validate))
+assert safe == Ok({"raw": "data from https://example.com"})
 ```
 
 ## API reference
@@ -94,6 +100,7 @@ result = asyncio.run(async_pipe("https://example.com", fetch, parse))
 | `first_some(*funcs)` | `(*Callable[..., T\|None]) -> Callable[..., T\|None]` | Return first non-None result |
 | `async_pipe(value, *funcs)` | `async (T, *Callable) -> R` | Thread value through sync/async functions |
 | `try_pipe(value, *funcs)` | `(T, *Callable) -> Result[R, Exception]` | Error-aware pipeline |
+| `async_try_pipe(value, *funcs)` | `async (T, *Callable) -> Result[R, Exception]` | Async error-aware pipeline |
 
 ### `Result[T, E]`
 
@@ -103,6 +110,7 @@ result = asyncio.run(async_pipe("https://example.com", fetch, parse))
 | `.is_err()` | `() -> bool` | True if Err |
 | `.unwrap()` | `() -> T` | Return value or raise |
 | `.unwrap_or(default)` | `(T) -> T` | Return value or default |
+| `.unwrap_err()` | `() -> E` | Return error or raise |
 | `.map(func)` | `(Callable[[T], U]) -> Result[U, E]` | Transform Ok value |
 | `.map_err(func)` | `(Callable[[E], F]) -> Result[T, F]` | Transform Err value |
 | `.and_then(func)` | `(Callable[[T], Result[U, E]]) -> Result[U, E]` | Chain operations |
@@ -110,12 +118,9 @@ result = asyncio.run(async_pipe("https://example.com", fetch, parse))
 
 All combinators set `__qualname__` on the returned callable for debuggability.
 
-## Upstream context
-
-PEP 638 proposed a pipe operator (`|>`) for Python. It was rejected, but the underlying need — threading data through transformations without deeply nested calls — remains. This package provides the same ergonomics as library functions.
-
-- [PEP 638 — Syntactic Macros](https://peps.python.org/pep-0638/) (rejected)
-- Related discussion: [python-ideas: pipe operator](https://discuss.python.org/t/pipe-operator/)
+Async helpers await any awaitable result, including coroutine objects,
+`asyncio.Future`, `asyncio.Task`, and custom objects that implement
+`__await__()`.
 
 ## License
 

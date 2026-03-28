@@ -69,7 +69,7 @@ if breaker.allow_request(time.monotonic()):
 | Name | Description |
 |---|---|
 | `Actor` | Base class. Subclass and implement `on_message()`. |
-| `ActorRef` | Handle for sending messages to an actor. |
+| `ActorRef` | Handle for sending messages to the current live actor instance. |
 | `ActorSystem` | Spawns and supervises actors (async context manager). |
 | `Inbox` | Bounded message queue with configurable overflow. |
 | `PersistentBridge` | Async-sync bridge for monitor-thread patterns. |
@@ -139,7 +139,7 @@ if breaker.allow_request(time.monotonic()):
 | `.reset()` | `() -> None` | Reset to CLOSED state |
 | `.state` | `CircuitState` | Current state: `CLOSED`, `OPEN`, or `HALF_OPEN` |
 
-Raises `CircuitOpenError` when `allow_request()` returns `False`.
+`allow_request()` returns `False` when the breaker is open; it does not raise.
 
 ### `OverflowPolicy`
 
@@ -175,11 +175,24 @@ msg = await actor._inbox.receive(match=MyMessageType, timeout=5.0)
 | `.call(coro_func, *args)` | `(Callable, ...) -> None` | Fire-and-forget from sync thread |
 | `.call_wait(coro_func, *args, timeout=None)` | `(Callable, ...) -> T` | Blocking call from sync thread |
 
+`ActorSystem.spawn()` must be called inside a running `async with ActorSystem()`
+block. Calling it before the system is entered raises `RuntimeError`.
+
 ### System-level restart behavior
 
 When `ActorSystem` restarts a crashed actor:
-- Buffered messages are drained from the old inbox into the new one (no message loss)
+- A fresh actor instance is created for the next run
+- Existing `ActorRef`s keep working by redirecting to the replacement actor
+- Buffered messages already accepted into the inbox remain available after restart
 - Exponential backoff is applied between restarts (100ms initial, 5s max, 2x factor)
+
+This matches `Supervisor` child replacement semantics: restart means replace the
+actor instance, not re-run the same object.
+
+When an actor or system is stopped while `on_message()` is still running, the
+in-flight handler task is cancelled so shutdown does not hang indefinitely.
+`on_stop()` still runs exactly once during teardown. `PersistentBridge.call()`
+remains fire-and-forget, but unexpected coroutine exceptions are now logged.
 
 ## Upstream context
 

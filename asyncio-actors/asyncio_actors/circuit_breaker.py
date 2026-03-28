@@ -78,7 +78,8 @@ class CircuitBreaker:
         if self._state == CircuitState.OPEN:
             if now - self._last_failure_time >= self._recovery_timeout:
                 self._state = CircuitState.HALF_OPEN
-                self._half_open_calls = 0
+                self._half_open_calls = 1
+                self._success_count = 0
                 return True
             return False
 
@@ -102,6 +103,8 @@ class CircuitBreaker:
         if self._state == CircuitState.HALF_OPEN:
             # Failure during recovery — go back to OPEN
             self._state = CircuitState.OPEN
+            self._half_open_calls = 0
+            self._success_count = 0
             return
 
         self._failure_count += 1

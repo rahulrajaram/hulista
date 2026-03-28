@@ -1,8 +1,7 @@
 """Core implementation of @sealed decorator."""
 from __future__ import annotations
 
-import sys
-from typing import Any
+from typing import Any, cast
 
 
 def sealed(cls: type) -> type:
@@ -26,33 +25,47 @@ def sealed(cls: type) -> type:
     if not isinstance(cls, type):
         raise TypeError(f"@sealed can only be applied to classes, got {type(cls).__name__}")
 
-    cls.__sealed__ = True
-    cls.__sealed_module__ = cls.__module__
-    cls.__sealed_subclasses__ = set()
+    cls_any = cast(Any, cls)
+    cls_any.__sealed__ = True
+    cls_any.__sealed_module__ = cls.__module__
+    cls_any.__sealed_subclasses__ = set()
 
-    original_init_subclass = cls.__init_subclass__
+    original_init_subclass = cls.__dict__.get('__init_subclass__')
+    original_init_subclass_func = getattr(original_init_subclass, '__func__', original_init_subclass)
 
-    @classmethod
-    def _sealed_init_subclass(subcls, **kwargs):
+    def _sealed_init_subclass(subcls: type, /, **kwargs: Any) -> None:
         # Allow subclassing only within the same module
-        if subcls.__module__ != cls.__sealed_module__:
+        if subcls.__module__ != cls_any.__sealed_module__:
             raise TypeError(
                 f"Cannot subclass sealed class '{cls.__qualname__}' "
-                f"outside of module '{cls.__sealed_module__}'. "
+                f"outside of module '{cls_any.__sealed_module__}'. "
                 f"Attempted in module '{subcls.__module__}'."
             )
-        cls.__sealed_subclasses__.add(subcls)
+        other_sealed_bases = [
+            base
+            for base in subcls.__mro__[1:]
+            if base is not cls and is_sealed(base)
+        ]
+        if other_sealed_bases:
+            names = ', '.join(base.__qualname__ for base in other_sealed_bases)
+            raise TypeError(
+                f"Cannot create '{subcls.__qualname__}' with multiple sealed bases. "
+                f"Conflicting sealed base(s): {names}"
+            )
+        cls_any.__sealed_subclasses__.add(subcls)
         # Call original __init_subclass__ if it existed
-        if original_init_subclass is not type.__init_subclass__:
-            original_init_subclass(**kwargs)
+        if original_init_subclass_func is not None:
+            original_init_subclass_func(subcls, **kwargs)
+        else:
+            super(cls, subcls).__init_subclass__(**kwargs)  # type: ignore[arg-type]
 
-    cls.__init_subclass__ = _sealed_init_subclass
+    cls_any.__init_subclass__ = classmethod(_sealed_init_subclass)
 
     # Register any subclasses that were defined before @sealed was applied
     # (handles the case where subclasses exist in the same module already)
     for existing_sub in cls.__subclasses__():
-        if existing_sub.__module__ == cls.__sealed_module__:
-            cls.__sealed_subclasses__.add(existing_sub)
+        if existing_sub.__module__ == cls_any.__sealed_module__:
+            cls_any.__sealed_subclasses__.add(existing_sub)
 
     return cls
 
@@ -105,9 +118,28 @@ def assert_exhaustive(value: Any, *handlers: type) -> None:
             f"'{cls.__qualname__}' is not a subclass of any sealed class"
         )
 
-    expected = sealed_subclasses(sealed_base)
+    invalid_handlers = [
+        handler for handler in handlers
+        if not isinstance(handler, type) or not issubclass(handler, sealed_base)
+    ]
+    if invalid_handlers:
+        invalid_names = ', '.join(
+            h.__qualname__ if isinstance(h, type) else repr(h)
+            for h in invalid_handlers
+        )
+        raise TypeError(
+            f"Handlers for sealed class '{sealed_base.__qualname__}' must be "
+            f"subclasses of that sealed base. Invalid handlers: {invalid_names}"
+        )
+
+    expected = set(sealed_subclasses(sealed_base))
+    if cls is sealed_base:
+        expected.add(sealed_base)
     provided = frozenset(handlers)
-    missing = expected - provided
+    missing = frozenset(
+        candidate for candidate in expected
+        if not any(issubclass(candidate, handler) for handler in provided)
+    )
 
     if missing:
         missing_names = ', '.join(sorted(c.__qualname__ for c in missing))

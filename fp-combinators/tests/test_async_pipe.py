@@ -258,6 +258,60 @@ async def test_async_try_pipe_async_error():
     assert "async boom" in str(result.unwrap_err())
 
 
+class _CustomAwaitable:
+    def __init__(self, value):
+        self._value = value
+
+    def __await__(self):
+        async def _inner():
+            return self._value
+        return _inner().__await__()
+
+
+@pytest.mark.asyncio
+async def test_async_pipe_awaits_future_results():
+    loop = asyncio.get_running_loop()
+
+    def make_future(x):
+        fut = loop.create_future()
+        fut.set_result(x + 2)
+        return fut
+
+    result = await async_pipe(5, make_future, double)
+    assert result == 14
+
+
+@pytest.mark.asyncio
+async def test_async_pipe_awaits_custom_awaitables():
+    result = await async_pipe(3, lambda x: _CustomAwaitable(x + 4), double)
+    assert result == 14
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_awaits_task_results():
+    async def plus_three(x):
+        return x + 3
+
+    def make_task(x):
+        return asyncio.create_task(plus_three(x))
+
+    result = await async_try_pipe(4, make_task, double)
+    assert result == Ok(14)
+
+
+@pytest.mark.asyncio
+async def test_async_try_pipe_catches_custom_awaitable_errors():
+    class _BoomAwaitable:
+        def __await__(self):
+            async def _inner():
+                raise RuntimeError("awaitable boom")
+            return _inner().__await__()
+
+    result = await async_try_pipe(1, lambda _: _BoomAwaitable())
+    assert result.is_err()
+    assert "awaitable boom" in str(result.unwrap_err())
+
+
 @pytest.mark.asyncio
 async def test_async_try_pipe_mixed_sync_async():
     result = await async_try_pipe(3, add_one, async_double, to_str)

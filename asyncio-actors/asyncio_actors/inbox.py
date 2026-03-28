@@ -21,12 +21,13 @@ class InboxFull(Exception):
 
 class Inbox(Generic[T]):
     """Bounded message inbox with configurable overflow policy."""
-    __slots__ = ('_queue', '_maxsize', '_policy', '_waiters', '_closed', '_not_full')
+    __slots__ = ('_queue', '_stash', '_maxsize', '_policy', '_waiters', '_closed', '_not_full')
 
     def __init__(self, maxsize: int = 100, policy: OverflowPolicy = OverflowPolicy.BLOCK):
         self._maxsize = maxsize
         self._policy = policy
         self._queue: deque[T] = deque()
+        self._stash: deque[T] = deque()
         self._waiters: deque[asyncio.Future[T]] = deque()
         self._closed = False
         self._not_full = asyncio.Event()
@@ -34,15 +35,15 @@ class Inbox(Generic[T]):
 
     @property
     def size(self) -> int:
-        return len(self._queue)
+        return len(self._stash) + len(self._queue)
 
     @property
     def full(self) -> bool:
-        return len(self._queue) >= self._maxsize
+        return self.size >= self._maxsize
 
     @property
     def empty(self) -> bool:
-        return len(self._queue) == 0
+        return self.size == 0
 
     async def put(self, message: T) -> None:
         if self._closed:
@@ -50,7 +51,7 @@ class Inbox(Generic[T]):
 
         if self.full:
             if self._policy == OverflowPolicy.DROP_OLDEST:
-                self._queue.popleft()
+                self._drop_oldest()
             elif self._policy == OverflowPolicy.RAISE:
                 raise InboxFull(f"Inbox full ({self._maxsize} messages)")
             elif self._policy == OverflowPolicy.BLOCK:
@@ -68,6 +69,11 @@ class Inbox(Generic[T]):
         self._notify_waiters()
 
     async def get(self, timeout: float | None = None) -> T:
+        if self._stash:
+            msg = self._stash.popleft()
+            if not self.full:
+                self._not_full.set()
+            return msg
         if self._queue:
             msg = self._queue.popleft()
             if not self.full:
@@ -76,17 +82,7 @@ class Inbox(Generic[T]):
         if self._closed:
             raise RuntimeError("Inbox is closed and empty")
 
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[T] = loop.create_future()
-        self._waiters.append(fut)
-        try:
-            return await asyncio.wait_for(fut, timeout=timeout)
-        except asyncio.TimeoutError:
-            try:
-                self._waiters.remove(fut)
-            except ValueError:
-                pass
-            raise
+        return await self._await_queued_message(timeout=timeout)
 
     def _notify_waiters(self) -> None:
         while self._waiters and self._queue:
@@ -105,6 +101,25 @@ class Inbox(Generic[T]):
             if not fut.done():
                 fut.set_exception(RuntimeError("Inbox closed"))
 
+    def _drop_oldest(self) -> None:
+        if self._stash:
+            self._stash.popleft()
+        elif self._queue:
+            self._queue.popleft()
+
+    async def _await_queued_message(self, timeout: float | None = None) -> T:
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[T] = loop.create_future()
+        self._waiters.append(fut)
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            try:
+                self._waiters.remove(fut)
+            except ValueError:
+                pass
+            raise
+
     async def receive(self, match: type, timeout: float | None = None) -> Any:
         """Selective receive: scan inbox for the first message matching a type.
 
@@ -122,13 +137,16 @@ class Inbox(Generic[T]):
         Raises:
             asyncio.TimeoutError: If no matching message arrives within timeout.
         """
-        # First, scan existing queue for a match
-        for i, msg in enumerate(self._queue):
-            if isinstance(msg, match):
-                del self._queue[i]
-                if not self.full:
-                    self._not_full.set()
-                return msg
+        matched = self._take_matching(self._stash, match)
+        if matched is not _SENTINEL:
+            if not self.full:
+                self._not_full.set()
+            return matched
+        matched = self._take_matching(self._queue, match)
+        if matched is not _SENTINEL:
+            if not self.full:
+                self._not_full.set()
+            return matched
 
         # No match in queue — wait for new messages
         deadline = None
@@ -136,27 +154,20 @@ class Inbox(Generic[T]):
             import time
             deadline = time.monotonic() + timeout
 
-        stashed: list[T] = []
-        try:
-            while True:
-                remaining = None
-                if deadline is not None:
-                    import time
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        raise asyncio.TimeoutError()
+        while True:
+            remaining = None
+            if deadline is not None:
+                import time
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
 
-                msg = await self.get(timeout=remaining)
-                if isinstance(msg, match):
-                    return msg
-                # Not a match — stash for re-insertion in order
-                stashed.append(msg)
-        finally:
-            # Re-insert stashed messages at the front, preserving order
-            if stashed:
-                stashed.reverse()
-                for m in stashed:
-                    self._queue.appendleft(m)
+            msg = await self._await_queued_message(timeout=remaining)
+            if isinstance(msg, match):
+                if not self.full:
+                    self._not_full.set()
+                return msg
+            self._stash.append(msg)
 
     def drain_into(self, other: Inbox[T]) -> int:
         """Drain remaining messages into another inbox (synchronous, no await).
@@ -164,8 +175,22 @@ class Inbox(Generic[T]):
         Returns the number of messages transferred.
         """
         count = 0
+        while self._stash:
+            msg = self._stash.popleft()
+            other._queue.append(msg)
+            count += 1
         while self._queue:
             msg = self._queue.popleft()
             other._queue.append(msg)
             count += 1
         return count
+
+    def _take_matching(self, store: deque[T], match: type) -> object:
+        for i, msg in enumerate(store):
+            if isinstance(msg, match):
+                del store[i]
+                return msg
+        return _SENTINEL
+
+
+_SENTINEL = object()

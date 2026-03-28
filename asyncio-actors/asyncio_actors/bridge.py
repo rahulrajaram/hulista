@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from concurrent.futures import Future
 from typing import Any, Callable, Coroutine, TypeVar
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 
 class PersistentBridge:
@@ -35,7 +38,8 @@ class PersistentBridge:
         self, coro_func: Callable[..., Coroutine[Any, Any, Any]], *args: Any
     ) -> None:
         """Schedule an async call from a sync thread; do not wait for result."""
-        asyncio.run_coroutine_threadsafe(coro_func(*args), self._loop)
+        future = asyncio.run_coroutine_threadsafe(coro_func(*args), self._loop)
+        future.add_done_callback(self._log_call_exception)
 
     def call_wait(
         self,
@@ -60,3 +64,10 @@ class PersistentBridge:
         """
         future = asyncio.run_coroutine_threadsafe(coro_func(*args), self._loop)
         return future.result(timeout=timeout)
+
+    @staticmethod
+    def _log_call_exception(future: Future[Any]) -> None:
+        try:
+            future.result()
+        except Exception:
+            logger.exception("PersistentBridge.call() task failed")

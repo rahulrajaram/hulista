@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import asyncio.tasks as _tasks_mod
 import asyncio.futures as _futures_mod
 
 
@@ -24,8 +23,9 @@ class CollectorTaskGroup:
         # All three tasks always run to completion.
         # Individual results: t1.result(), t2.result(), etc.
 
-    Mirrors stdlib ``asyncio.TaskGroup`` semantics for everything except
-    the abort-on-first-error behaviour.  External cancellation of the
+    Deliberately differs from stdlib ``asyncio.TaskGroup`` in two ways:
+    child failure does not cancel siblings, and it also does not interrupt
+    the still-running ``async with`` body. External cancellation of the
     parent task still propagates cancellation to children normally.
 
     Ref: https://github.com/python/cpython/issues/101581
@@ -70,7 +70,6 @@ class CollectorTaskGroup:
         return self
 
     async def __aexit__(self, et, exc, tb):
-        tb = None
         try:
             return await self._aexit(et, exc)
         finally:

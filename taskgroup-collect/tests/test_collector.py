@@ -1,6 +1,7 @@
 """Tests for CollectorTaskGroup."""
 
 import asyncio
+from builtins import BaseExceptionGroup
 import pytest
 
 from taskgroup_collect import CollectorTaskGroup
@@ -127,7 +128,7 @@ class TestEmptyGroup:
 
     @staticmethod
     async def _run():
-        async with CollectorTaskGroup() as tg:
+        async with CollectorTaskGroup():
             pass  # No tasks
 
     def test_empty_group(self):
@@ -160,6 +161,60 @@ class TestExceptionInBody:
         assert any(isinstance(e, RuntimeError) for e in exc_info.value.exceptions)
 
     def test_exception_in_body(self):
+        asyncio.run(self._run())
+
+
+class TestChildFailureDoesNotInterruptBody:
+    """A child failure does not unwind the active async-with body."""
+
+    @staticmethod
+    async def _run():
+        marks = []
+
+        async def fail():
+            await asyncio.sleep(0.01)
+            raise ValueError("boom")
+
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            async with CollectorTaskGroup() as tg:
+                tg.create_task(fail())
+                await asyncio.sleep(0.02)
+                marks.append("body-continued")
+
+        assert marks == ["body-continued"]
+        assert len(exc_info.value.exceptions) == 1
+        assert isinstance(exc_info.value.exceptions[0], ValueError)
+
+    def test_child_failure_does_not_interrupt_body(self):
+        asyncio.run(self._run())
+
+
+class TestLateTaskCreationAfterFailure:
+    """Tasks can still be created after an earlier child has failed."""
+
+    @staticmethod
+    async def _run():
+        late_result = []
+
+        async def fail():
+            await asyncio.sleep(0.01)
+            raise ValueError("boom")
+
+        async def succeed():
+            await asyncio.sleep(0.01)
+            late_result.append("late-task-finished")
+
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            async with CollectorTaskGroup() as tg:
+                tg.create_task(fail())
+                await asyncio.sleep(0.02)
+                tg.create_task(succeed())
+
+        assert late_result == ["late-task-finished"]
+        assert len(exc_info.value.exceptions) == 1
+        assert isinstance(exc_info.value.exceptions[0], ValueError)
+
+    def test_late_task_creation_after_failure(self):
         asyncio.run(self._run())
 
 
@@ -203,6 +258,110 @@ class TestDoubleEnter:
 
     def test_double_enter(self):
         asyncio.run(self._run())
+
+
+class TestExternalCancellation:
+    """External parent cancellation still propagates to children."""
+
+    @staticmethod
+    async def _run():
+        child_cancelled = asyncio.Event()
+
+        async def slow():
+            try:
+                await asyncio.sleep(10)
+            except asyncio.CancelledError:
+                child_cancelled.set()
+                raise
+
+        async def scenario():
+            parent = asyncio.current_task()
+
+            async def cancel_parent():
+                await asyncio.sleep(0.01)
+                parent.cancel()
+
+            asyncio.create_task(cancel_parent())
+            async with CollectorTaskGroup() as tg:
+                tg.create_task(slow())
+                await asyncio.sleep(10)
+
+        with pytest.raises(asyncio.CancelledError):
+            await scenario()
+
+        assert child_cancelled.is_set()
+
+    def test_external_cancellation(self):
+        asyncio.run(self._run())
+
+
+class TestCancellationAndErrorPrecedence:
+    """A collected child error is raised before preserved parent cancellation."""
+
+    @staticmethod
+    async def _run():
+        parent = asyncio.current_task()
+
+        async def fail():
+            await asyncio.sleep(0.01)
+            raise ValueError("boom")
+
+        async def cancel_parent():
+            await asyncio.sleep(0.02)
+            parent.cancel()
+
+        asyncio.create_task(cancel_parent())
+
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            async with CollectorTaskGroup() as tg:
+                tg.create_task(fail())
+                await asyncio.sleep(0.03)
+
+        assert len(exc_info.value.exceptions) == 1
+        assert isinstance(exc_info.value.exceptions[0], ValueError)
+
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.sleep(0)
+
+    def test_cancellation_and_error_precedence(self):
+        asyncio.run(self._run())
+
+
+class TestChildCancellation:
+    """Child CancelledError is ignored rather than collected."""
+
+    @staticmethod
+    async def _run():
+        async def cancel_self():
+            raise asyncio.CancelledError()
+
+        async with CollectorTaskGroup() as tg:
+            tg.create_task(cancel_self())
+
+    def test_child_cancellation_is_ignored(self):
+        asyncio.run(self._run())
+
+
+class TestBaseExceptionPrecedence:
+    """SystemExit and KeyboardInterrupt win over ordinary aggregation."""
+
+    @staticmethod
+    async def _run():
+        async def fail():
+            await asyncio.sleep(0.01)
+            raise ValueError("ordinary")
+
+        async def exit_now():
+            await asyncio.sleep(0.01)
+            raise SystemExit("stop now")
+
+        async with CollectorTaskGroup() as tg:
+            tg.create_task(fail())
+            tg.create_task(exit_now())
+
+    def test_base_exception_precedence(self):
+        with pytest.raises(SystemExit, match="stop now"):
+            asyncio.run(self._run())
 
 
 # --- Comparison with stdlib TaskGroup ---

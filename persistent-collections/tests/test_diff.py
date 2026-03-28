@@ -261,6 +261,12 @@ class TestEmptyMaps:
         assert all(c.type == ChangeType.REMOVED for c in changes)
         assert len(changes) == 2
 
+    def test_same_object_non_reflexive_key_has_no_changes(self):
+        nan = float("nan")
+        pm1 = PersistentMap().set(nan, "value")
+        pm2 = PersistentMap().set(nan, "value")
+        assert list(diff(pm1, pm2)) == []
+
 
 # ---------------------------------------------------------------------------
 # Change dataclass — frozen/immutable
