@@ -200,15 +200,16 @@ The packages compose into a layered system:
 ## Development
 
 ```bash
-# Run all unit tests
-for d in */; do
-  if [ -d "$d/tests" ]; then
-    (cd "$d" && python3 -m pytest tests/ -v)
-  fi
-done
+# Run the full monorepo test suite
+make test
 
-# Run integration tests
-python3 -m pytest tests/ -v
+# Enforce coverage and type-checking gates
+make coverage
+make typecheck
+
+# Run warnings-as-errors and packaging checks
+make deprecationcheck
+make build
 ```
 
 ## License
