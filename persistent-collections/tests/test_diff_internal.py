@@ -59,6 +59,32 @@ def test_diff_array_array_covers_leaf_subnode_cases() -> None:
     assert by_key["d"].type == ChangeType.ADDED
     assert by_key["c"].type == ChangeType.REMOVED
     assert by_key["e"].type == ChangeType.ADDED
+    assert "b" not in by_key
+
+
+def test_diff_array_array_preserves_shared_keys_inside_leaf_subnode_transitions() -> None:
+    left = _ArrayNode(
+        2,
+        [
+            ("shared-left", 1),
+            _BitmapNode(0b11, ("shared-right", 2, "removed", 3)),
+        ] + [None] * 30,
+    )
+    right = _ArrayNode(
+        2,
+        [
+            _BitmapNode(0b11, ("shared-left", 1, "added", 4)),
+            ("shared-right", 2),
+        ] + [None] * 30,
+    )
+
+    changes = list(_diff_array_array(left, right, 0))
+    by_key = {change.key: change for change in changes}
+
+    assert by_key["added"].type == ChangeType.ADDED
+    assert by_key["removed"].type == ChangeType.REMOVED
+    assert "shared-left" not in by_key
+    assert "shared-right" not in by_key
 
 
 def test_diff_collision_collision_matches_identity_aware_keys() -> None:

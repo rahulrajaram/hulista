@@ -113,6 +113,27 @@ jobs:
       - name: Mypy
         run: make typecheck
 
+  deprecationcheck:
+    runs-on: ubuntu-latest
+    name: Deprecation check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install repo tooling
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build pydantic
+
+      - name: Warnings as errors
+        run: make deprecationcheck
+
   build:
     runs-on: ubuntu-latest
     name: Build packages

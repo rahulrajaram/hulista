@@ -61,6 +61,32 @@ def _yield_all(node: Any, change_type: ChangeType) -> Iterator[Change]:
             yield Change(ChangeType.REMOVED, k, old_value=v)
 
 
+def _entry_dict(key_or_none: Any, value_or_node: Any) -> dict[Any, Any]:
+    """Materialize a HAMT slot entry as a plain mapping."""
+    if key_or_none is None:
+        return dict(value_or_node.items())
+    return {key_or_none: value_or_node}
+
+
+def _diff_materialized_entries(
+    left_key_or_none: Any,
+    left_value_or_node: Any,
+    right_key_or_none: Any,
+    right_value_or_node: Any,
+) -> Iterator[Change]:
+    """Diff two leaf-or-subnode slot entries by materializing their items."""
+    left_items = _entry_dict(left_key_or_none, left_value_or_node)
+    right_items = _entry_dict(right_key_or_none, right_value_or_node)
+
+    for key in set(left_items) - set(right_items):
+        yield Change(ChangeType.REMOVED, key, old_value=left_items[key])
+    for key in set(right_items) - set(left_items):
+        yield Change(ChangeType.ADDED, key, new_value=right_items[key])
+    for key in set(left_items) & set(right_items):
+        if left_items[key] != right_items[key]:
+            yield Change(ChangeType.MODIFIED, key, old_value=left_items[key], new_value=right_items[key])
+
+
 def _diff_nodes(n1: Any, n2: Any, shift: int) -> Iterator[Change]:
     """Recursively diff two HAMT nodes using pairwise structural walk."""
     if n1 is n2:
@@ -120,16 +146,7 @@ def _diff_bitmap_bitmap(n1: _BitmapNode, n2: _BitmapNode, shift: int) -> Iterato
                     yield Change(ChangeType.REMOVED, k1, old_value=v1)
                     yield Change(ChangeType.ADDED, k2, new_value=v2)
             else:
-                # Mixed: one leaf, one subnode — materialize both slots
-                d1 = dict([(k1, v1)] if k1 is not None else v1.items())
-                d2 = dict([(k2, v2)] if k2 is not None else v2.items())
-                for k in set(d1) - set(d2):
-                    yield Change(ChangeType.REMOVED, k, old_value=d1[k])
-                for k in set(d2) - set(d1):
-                    yield Change(ChangeType.ADDED, k, new_value=d2[k])
-                for k in set(d1) & set(d2):
-                    if d1[k] != d2[k]:
-                        yield Change(ChangeType.MODIFIED, k, old_value=d1[k], new_value=d2[k])
+                yield from _diff_materialized_entries(k1, v1, k2, v2)
 
         elif in1:
             # Only in n1 — removed
@@ -184,13 +201,9 @@ def _diff_array_array(n1: _ArrayNode, n2: _ArrayNode, shift: int) -> Iterator[Ch
                 yield Change(ChangeType.REMOVED, e1[0], old_value=e1[1])
                 yield Change(ChangeType.ADDED, e2[0], new_value=e2[1])
         elif isinstance(e1, tuple):
-            # e1 leaf, e2 subnode
-            yield Change(ChangeType.REMOVED, e1[0], old_value=e1[1])
-            yield from _yield_all(e2, ChangeType.ADDED)
+            yield from _diff_materialized_entries(e1[0], e1[1], None, e2)
         elif isinstance(e2, tuple):
-            # e1 subnode, e2 leaf
-            yield from _yield_all(e1, ChangeType.REMOVED)
-            yield Change(ChangeType.ADDED, e2[0], new_value=e2[1])
+            yield from _diff_materialized_entries(None, e1, e2[0], e2[1])
         else:
             # Both subnodes — recurse
             yield from _diff_nodes(e1, e2, shift + BITS_PER_LEVEL)

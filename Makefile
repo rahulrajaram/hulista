@@ -19,8 +19,10 @@ BUILD_PACKAGES := \
 	sealed-typing \
 	taskgroup-collect \
 	with-update
+PYTEST_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning
+BUILD_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning -W error::UserWarning:setuptools
 
-.PHONY: test coverage typecheck bench build
+.PHONY: test coverage typecheck bench build deprecationcheck
 
 test:
 	PYTHONPATH="$(PYTHONPATH)" $(PYTHON) -m pytest -p no:pytest_monitor $(PACKAGE_TESTS) -q
@@ -32,6 +34,7 @@ coverage:
 
 typecheck:
 	MYPYPATH="$(PYTHONPATH)" $(PYTHON) -m mypy --config-file mypy.ini
+	MYPYPATH="$(PYTHONPATH)" $(PYTHON) -m mypy --config-file mypy-tests.ini
 
 bench:
 	mkdir -p .benchmarks
@@ -43,3 +46,8 @@ build:
 		(cd $$pkg && $(PYTHON) -m build .); \
 	done
 
+deprecationcheck:
+	PYTHONPATH="$(PYTHONPATH)" $(PYTHON) $(PYTEST_DEPRECATION_FLAGS) -m pytest -p no:pytest_monitor $(PACKAGE_TESTS) -q
+	for pkg in $(BUILD_PACKAGES); do \
+		(cd $$pkg && $(PYTHON) $(BUILD_DEPRECATION_FLAGS) -m build .); \
+	done
