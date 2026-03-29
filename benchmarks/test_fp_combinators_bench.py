@@ -13,4 +13,3 @@ def test_fp_pipe_chain(benchmark) -> None:
 def test_fp_result_map_chain(benchmark) -> None:
     result = benchmark(lambda: Ok(1).map(lambda x: x + 1).map(lambda x: x * 3).unwrap())
     assert result == 6
-

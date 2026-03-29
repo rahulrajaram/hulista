@@ -20,4 +20,3 @@ def test_register_handles_uninspectable_callables(monkeypatch) -> None:
 
     assert returned is callable_object
     assert dispatch(1) == 2
-

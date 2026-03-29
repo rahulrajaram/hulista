@@ -12,4 +12,3 @@ def test_sealed_registers_existing_subclasses() -> None:
 
     sealed_base = sealed(Base)
     assert sealed_subclasses(sealed_base) == frozenset({Child})
-

@@ -13,4 +13,3 @@ def test_live_dispatch_cached_call(benchmark) -> None:
     assert dispatch(1) == 2
     result = benchmark(lambda: dispatch(41))
     assert result == 42
-

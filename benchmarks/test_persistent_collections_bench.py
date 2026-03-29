@@ -18,4 +18,3 @@ def test_persistent_vector_iteration(benchmark) -> None:
     vector = PersistentVector(range(1024))
     total = benchmark(lambda: sum(vector))
     assert total == sum(range(1024))
-

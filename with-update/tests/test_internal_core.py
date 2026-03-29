@@ -37,4 +37,3 @@ def test_normalize_pydantic_changes_rejects_duplicate_aliases() -> None:
 
     with pytest.raises(TypeError, match="Duplicate update keys"):
         core._normalize_pydantic_changes(Model, {"value": 1, "VALUE": 2})
-

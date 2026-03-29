@@ -30,4 +30,3 @@ def test_with_update_pydantic_copy(benchmark) -> None:
     config = _Config()
     result = benchmark(lambda: config.with_update(port=6432))
     assert result.port == 6432
-

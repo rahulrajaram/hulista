@@ -21,4 +21,3 @@ def test_taskgroup_successful_fanout(benchmark) -> None:
         runner.close()
 
     assert result == list(range(8))
-
