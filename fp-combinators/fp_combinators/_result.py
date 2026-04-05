@@ -214,3 +214,21 @@ def traverse(
             return cast(Result[list[U], E], r)
         values.append(cast(Ok[U, E], r).value)
     return Ok(values)
+
+
+def traverse_all(
+    items: Iterable[T],
+    func: Callable[[T], Result[U, E]],
+) -> Result[list[U], list[E]]:
+    """Apply *func* to every item, collecting all errors instead of short-circuiting."""
+    values: list[U] = []
+    errors: list[E] = []
+    for item in items:
+        r = func(item)
+        if isinstance(r, Err):
+            errors.append(cast(Err[U, E], r).error)
+            continue
+        values.append(cast(Ok[U, E], r).value)
+    if errors:
+        return Err(errors)
+    return Ok(values)

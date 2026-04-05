@@ -5,6 +5,7 @@
 - Result.async_and_then
 - sequence()
 - traverse()
+- traverse_all()
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import asyncio
 
 import pytest
 
-from fp_combinators import Err, Ok, Result, sequence, traverse
+from fp_combinators import Err, Ok, Result, sequence, traverse, traverse_all
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +259,19 @@ class TestSequence:
         results: list[Result[int, str]] = [Ok(1), Err("first"), Err("second")]
         result = sequence(results)
         assert result == Err("first")
+
+
+class TestTraverseAll:
+    def test_traverse_all_returns_ok_list_when_all_succeed(self):
+        result = traverse_all([1, 2, 3], lambda x: Ok(x * 2))
+        assert result == Ok([2, 4, 6])
+
+    def test_traverse_all_collects_all_errors(self):
+        result = traverse_all(
+            [1, -1, 3, -2],
+            lambda x: Err(f"neg:{x}") if x < 0 else Ok(x),
+        )
+        assert result == Err(["neg:-1", "neg:-2"])
 
     def test_single_ok(self):
         assert sequence([Ok(42)]) == Ok([42])

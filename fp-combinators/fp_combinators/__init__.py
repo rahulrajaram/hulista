@@ -1,22 +1,41 @@
 """fp-combinators: Lightweight functional programming combinators for Python."""
 
-from fp_combinators._core import pipe, compose, first_some, pipeline, async_pipe
+from fp_combinators._core import (
+    TraceEntry,
+    async_pipe,
+    async_resilient_pipe,
+    async_traced_pipe,
+    compose,
+    first_some,
+    pipe,
+    pipeline,
+    resilient_pipe,
+    traced_pipe,
+    when,
+)
 from fp_combinators._result import (
-    Result,
-    Ok,
     Err,
+    Ok,
+    Result,
     try_pipe,
     async_try_pipe,
     sequence,
     traverse,
+    traverse_all,
 )
 
 __all__ = [
+    "TraceEntry",
     "pipe",
     "compose",
     "first_some",
     "pipeline",
     "async_pipe",
+    "resilient_pipe",
+    "async_resilient_pipe",
+    "when",
+    "traced_pipe",
+    "async_traced_pipe",
     "Result",
     "Ok",
     "Err",
@@ -24,4 +43,5 @@ __all__ = [
     "async_try_pipe",
     "sequence",
     "traverse",
+    "traverse_all",
 ]

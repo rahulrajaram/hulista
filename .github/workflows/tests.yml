@@ -30,13 +30,13 @@ jobs:
       HULISTA_PYTHONPATH: "${{ github.workspace }}/asyncio-actors:${{ github.workspace }}/fp-combinators:${{ github.workspace }}/live-dispatch:${{ github.workspace }}/persistent-collections:${{ github.workspace }}/sealed-typing:${{ github.workspace }}/taskgroup-collect:${{ github.workspace }}/with-update:${{ github.workspace }}/hulista"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
           allow-prereleases: ${{ matrix.allow-prereleases || false }}
@@ -79,13 +79,13 @@ jobs:
     name: Coverage gates
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload coverage JSON
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: coverage-json
           path: .benchmarks/coverage.json
@@ -108,13 +108,13 @@ jobs:
     name: Typecheck
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
@@ -129,13 +129,13 @@ jobs:
     name: Deprecation check
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
@@ -150,13 +150,13 @@ jobs:
     name: Build packages
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
@@ -173,13 +173,13 @@ jobs:
     continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload benchmark JSON
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: benchmark-json
           path: .benchmarks/benchmark-results.json
@@ -202,13 +202,13 @@ jobs:
     name: sealed-typing Python 3.10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v8.0.0
 
       - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.10"
 
