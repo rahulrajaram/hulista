@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload coverage JSON
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: coverage-json
           path: .benchmarks/coverage.json
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload benchmark JSON
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: benchmark-json
           path: .benchmarks/benchmark-results.json
