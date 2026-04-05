@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any, Generic, TypeVar
 
 from asyncio_actors.inbox import Inbox, OverflowPolicy
@@ -11,14 +12,49 @@ M = TypeVar('M')
 R = TypeVar('R')
 
 
+@dataclass
+class Envelope:
+    """Metadata wrapper applied to every message in transit."""
+    message: Any
+    sender: ActorRef[Any] | None
+    correlation_id: str | None
+    timestamp: float
+
+
 class ActorRef(Generic[M]):
     """Typed handle to a running actor for message passing."""
 
     def __init__(self, actor: Actor[M]) -> None: ...
 
-    async def send(self, message: M) -> None: ...
+    async def send(
+        self,
+        message: M,
+        *,
+        sender: ActorRef[Any] | None = ...,
+        correlation_id: str | None = ...,
+    ) -> None: ...
 
-    async def ask(self, message: M, timeout: float = 5.0) -> Any: ...
+    async def ask(
+        self,
+        message: M,
+        timeout: float = ...,
+        *,
+        sender: ActorRef[Any] | None = ...,
+        correlation_id: str | None = ...,
+    ) -> Any: ...
+
+    async def stop(self) -> None: ...
+
+    async def watch(self) -> asyncio.Future[None]: ...
+
+    async def ask_result(
+        self,
+        message: M,
+        timeout: float = 5.0,
+        *,
+        sender: ActorRef[M] | None = None,
+        correlation_id: str | None = None,
+    ) -> Any: ...
 
     @property
     def is_alive(self) -> bool: ...
@@ -35,6 +71,7 @@ class Actor(Generic[M]):
     _reply_future: asyncio.Future[Any] | None
     _ref_target: Actor[M]
     _task: asyncio.Task[None] | None
+    envelope: Envelope | None
 
     def __init__(self) -> None: ...
 
@@ -47,6 +84,12 @@ class Actor(Generic[M]):
     async def on_error(self, error: Exception) -> SupervisionStrategy: ...
 
     async def reply(self, response: Any) -> None: ...
+
+    async def receive(
+        self,
+        match: type | None = ...,
+        timeout: float | None = ...,
+    ) -> Any: ...
 
     async def stop(self) -> None: ...
 

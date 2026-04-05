@@ -9,5 +9,6 @@ See: https://github.com/python/cpython/issues/101581
 """
 
 from taskgroup_collect._collector import CollectorTaskGroup
+from taskgroup_collect._outcome import Failure, Success, TaskOutcome
 
-__all__ = ["CollectorTaskGroup"]
+__all__ = ["CollectorTaskGroup", "TaskOutcome", "Success", "Failure"]

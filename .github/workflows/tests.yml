@@ -26,6 +26,9 @@ jobs:
     name: Python ${{ matrix.python-version }}
     continue-on-error: ${{ matrix.experimental || false }}
 
+    env:
+      HULISTA_PYTHONPATH: "${{ github.workspace }}/asyncio-actors:${{ github.workspace }}/fp-combinators:${{ github.workspace }}/live-dispatch:${{ github.workspace }}/persistent-collections:${{ github.workspace }}/sealed-typing:${{ github.workspace }}/taskgroup-collect:${{ github.workspace }}/with-update:${{ github.workspace }}/hulista"
+
     steps:
       - uses: actions/checkout@v4
 
@@ -54,19 +57,22 @@ jobs:
         run: cd fp-combinators && python -m pytest tests/ -v
 
       - name: Unit tests — live-dispatch
-        run: cd live-dispatch && python -m pytest tests/ -v
+        run: cd live-dispatch && PYTHONPATH="${HULISTA_PYTHONPATH}" python -m pytest tests/ -v
 
       - name: Unit tests — with-update
-        run: cd with-update && python -m pytest tests/ -v
+        run: cd with-update && PYTHONPATH="${HULISTA_PYTHONPATH}" python -m pytest tests/ -v
 
       - name: Unit tests — asyncio-actors
-        run: cd asyncio-actors && python -m pytest tests/ -v
+        run: cd asyncio-actors && PYTHONPATH="${HULISTA_PYTHONPATH}" python -m pytest tests/ -v
 
       - name: Unit tests — taskgroup-collect
         run: cd taskgroup-collect && python -m pytest tests/ -v
 
+      - name: Unit tests — hulista
+        run: cd hulista && PYTHONPATH="${HULISTA_PYTHONPATH}" python -m pytest tests/ -v
+
       - name: Integration tests
-        run: python -m pytest tests/test_integration.py -v
+        run: PYTHONPATH="${HULISTA_PYTHONPATH}" python -m pytest tests/test_integration.py -v
 
   coverage:
     runs-on: ubuntu-latest

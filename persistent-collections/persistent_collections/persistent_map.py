@@ -115,6 +115,48 @@ class PersistentMap(collections.abc.Mapping):
     def __delattr__(self, name):
         raise AttributeError("PersistentMap is immutable")
 
+    def update(self, mapping_or_pairs) -> PersistentMap:
+        """Return a new map with all k/v pairs from *mapping_or_pairs* merged.
+
+        *mapping_or_pairs* may be any ``Mapping`` or an iterable of
+        ``(key, value)`` pairs.  Right-hand values win on collision.
+        """
+        m = self
+        if isinstance(mapping_or_pairs, collections.abc.Mapping):
+            for k, v in mapping_or_pairs.items():
+                m = m.set(k, v)
+        else:
+            for k, v in mapping_or_pairs:
+                m = m.set(k, v)
+        return m
+
+    def merge(self, other: PersistentMap) -> PersistentMap:
+        """Return the union of self and *other*; right-hand (other) values win."""
+        m = self
+        for k, v in other.items():
+            m = m.set(k, v)
+        return m
+
+    def without_many(self, keys) -> PersistentMap:
+        """Return a new map with all keys in *keys* removed.
+
+        Keys that are absent are silently ignored.
+        """
+        m = self
+        for k in keys:
+            try:
+                m = m.delete(k)
+            except KeyError:
+                pass
+        return m
+
+    def to_dict(self) -> dict:
+        """Return a plain Python ``dict`` with the same key-value pairs."""
+        return dict(self.items())
+
+    def __reduce__(self):
+        return (PersistentMap.from_dict, (self.to_dict(),))
+
     def transient(self) -> TransientMap:
         """Return a mutable transient builder for batch construction.
 

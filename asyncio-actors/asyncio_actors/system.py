@@ -22,13 +22,15 @@ class ActorSystem:
     Usage::
 
         async with ActorSystem() as system:
-            ref = await system.spawn(MyActor)
+            ref = await system.spawn(MyActor, name="my-actor")
             await ref.send("hello")
             result = await ref.ask("question")
+            same_ref = system.get("my-actor")
     """
 
     def __init__(self) -> None:
         self._actors: dict[Actor, asyncio.Task[None]] = {}
+        self._registry: dict[str, ActorRef] = {}
         self._running = False
 
     async def __aenter__(self) -> ActorSystem:
@@ -50,9 +52,24 @@ class ActorSystem:
             tasks = list(self._actors.values())
             await asyncio.gather(*tasks, return_exceptions=True)
         self._actors.clear()
+        self._registry.clear()
 
-    async def spawn(self, actor_cls: type[Actor], *args: Any, **kwargs: Any) -> ActorRef:
+    async def spawn(
+        self,
+        actor_cls: type[Actor],
+        *args: Any,
+        name: str | None = None,
+        **kwargs: Any,
+    ) -> ActorRef:
         """Instantiate *actor_cls* and start its supervised run loop.
+
+        Args:
+            actor_cls: The actor class to instantiate.
+            *args: Positional arguments forwarded to the actor constructor.
+            name: Optional name for the actor.  Must be unique within this
+                system; raises :class:`ValueError` if a name is reused while
+                the original actor is still registered.
+            **kwargs: Keyword arguments forwarded to the actor constructor.
 
         Returns an :class:`~asyncio_actors.actor.ActorRef` handle immediately.
         ``on_start`` will have had one event-loop iteration to begin running by
@@ -60,16 +77,30 @@ class ActorSystem:
         """
         if not self._running:
             raise RuntimeError("ActorSystem must be entered before spawning actors")
+        if name is not None and name in self._registry:
+            raise ValueError(f"An actor named {name!r} is already registered")
         actor = actor_cls(*args, **kwargs)
         task: asyncio.Task[None] = asyncio.create_task(
-            self._supervise(actor_cls, args, kwargs, actor),
+            self._supervise(actor_cls, args, kwargs, actor, name=name),
             name=f"actor-{type(actor).__name__}",
         )
         self._actors[actor] = task
+        ref = actor.ref()
+        if name is not None:
+            self._registry[name] = ref
         # Yield control so that on_start() has a chance to run before the
         # caller proceeds.
         await asyncio.sleep(0)
-        return actor.ref()
+        return ref
+
+    def get(self, name: str) -> ActorRef | None:
+        """Look up a named actor by name.
+
+        Returns the :class:`~asyncio_actors.actor.ActorRef` registered under
+        *name*, or ``None`` if no actor with that name exists (or it has been
+        removed after stopping).
+        """
+        return self._registry.get(name)
 
     async def _supervise(
         self,
@@ -77,6 +108,7 @@ class ActorSystem:
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         actor: Actor,
+        name: str | None = None,
     ) -> None:
         """Supervision loop: restart the actor according to its restart policy."""
         policy = actor.restart_policy
@@ -120,3 +152,5 @@ class ActorSystem:
                     break
         # Remove from the system registry once definitively done.
         self._actors.pop(actor, None)
+        if name is not None:
+            self._registry.pop(name, None)

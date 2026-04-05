@@ -3,12 +3,45 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
 from asyncio_actors.inbox import Inbox, OverflowPolicy
 from asyncio_actors.supervision import SupervisionStrategy, RestartPolicy
 
 logger = logging.getLogger(__name__)
+
+
+def _get_result_types():
+    """Lazily import Result, Ok, Err from fp-combinators.
+
+    Raises ImportError with a helpful message if fp-combinators is not installed.
+    """
+    try:
+        from fp_combinators import Result, Ok, Err
+        return Result, Ok, Err
+    except ImportError:
+        raise ImportError(
+            "ask_result() requires fp-combinators. Install with: pip install fp-combinators"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Envelope — wraps every message with metadata
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Envelope:
+    """Metadata wrapper applied to every message in transit.
+
+    The actor's ``on_message`` still receives the *unwrapped* payload; use
+    ``self.envelope`` inside ``on_message`` to access these fields.
+    """
+    message: Any
+    sender: ActorRef | None = None
+    correlation_id: str | None = None
+    timestamp: float = field(default_factory=time.time)
 
 
 class ActorRef:
@@ -29,20 +62,96 @@ class ActorRef:
             previous._ref_target = actor
         return actor
 
-    async def send(self, message: Any) -> None:
-        """Fire-and-forget message delivery."""
-        await self._target()._inbox.put(message)
+    async def send(
+        self,
+        message: Any,
+        *,
+        sender: ActorRef | None = None,
+        correlation_id: str | None = None,
+    ) -> None:
+        """Fire-and-forget message delivery.
 
-    async def ask(self, message: Any, timeout: float = 5.0) -> Any:
+        The message is wrapped in an :class:`Envelope`; the actor's
+        ``on_message`` receives the unwrapped payload and ``self.envelope``
+        holds the metadata.
+        """
+        envelope = Envelope(message=message, sender=sender, correlation_id=correlation_id)
+        await self._target()._inbox.put(envelope)
+
+    async def ask(
+        self,
+        message: Any,
+        timeout: float = 5.0,
+        *,
+        sender: ActorRef | None = None,
+        correlation_id: str | None = None,
+    ) -> Any:
         """Send a message and await the actor's reply.
 
         The actor must call ``await self.reply(value)`` or return a value from
         ``on_message`` to resolve the future.
         """
         reply_future: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
-        envelope = _AskEnvelope(message, reply_future)
-        await self._target()._inbox.put(envelope)
+        env = Envelope(message=message, sender=sender, correlation_id=correlation_id)
+        ask_env = _AskEnvelope(env, reply_future)
+        await self._target()._inbox.put(ask_env)
         return await asyncio.wait_for(reply_future, timeout=timeout)
+
+    async def ask_result(
+        self,
+        message: Any,
+        timeout: float = 5.0,
+        *,
+        sender: ActorRef | None = None,
+        correlation_id: str | None = None,
+    ) -> Any:
+        """Send a message and await the actor's reply, returning a Result.
+
+        Unlike :meth:`ask`, this method never raises on failure or timeout.
+        Instead it returns:
+
+        - ``Ok(value)`` on success
+        - ``Err(TimeoutError(...))`` when the reply exceeds *timeout* seconds
+        - ``Err(exc)`` when the actor raises an exception during handling
+
+        Requires the ``fp-combinators`` package to be installed.
+        """
+        _Result, Ok, Err = _get_result_types()
+        try:
+            value = await self.ask(message, timeout=timeout)
+            return Ok(value)
+        except asyncio.TimeoutError:
+            return Err(
+                TimeoutError(
+                    f"ask_result() timed out after {timeout}s waiting for reply"
+                )
+            )
+        except Exception as exc:
+            return Err(exc)
+
+    async def stop(self) -> None:
+        """Request a graceful shutdown of the actor.
+
+        Triggers the actor's ``on_stop()`` lifecycle hook.
+        """
+        await self._target().stop()
+
+    async def watch(self) -> asyncio.Future[None]:
+        """Return a :class:`asyncio.Future` that resolves when the actor stops.
+
+        Callers can ``await`` the returned future to be notified of termination::
+
+            done = await ref.watch()
+            await done
+        """
+        target = self._target()
+        fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        target._watchers.append(fut)
+        # If the actor is already stopped, resolve immediately.
+        if not target._running and target._task is None:
+            if not fut.done():
+                fut.set_result(None)
+        return fut
 
     @property
     def is_alive(self) -> bool:
@@ -50,10 +159,10 @@ class ActorRef:
 
 
 class _AskEnvelope:
-    __slots__ = ('message', 'reply_future')
+    __slots__ = ('envelope', 'reply_future')
 
-    def __init__(self, message: Any, reply_future: asyncio.Future[Any]) -> None:
-        self.message = message
+    def __init__(self, envelope: Envelope, reply_future: asyncio.Future[Any]) -> None:
+        self.envelope = envelope
         self.reply_future = reply_future
 
 
@@ -81,6 +190,10 @@ class Actor:
         self._ref_target: Actor = self
         self._task: asyncio.Task[None] | None = None
         self._reply_future: asyncio.Future[Any] | None = None
+        # Current envelope — populated before each on_message call.
+        self.envelope: Envelope | None = None
+        # Watchers — futures to resolve when the actor stops.
+        self._watchers: list[asyncio.Future[None]] = []
         # Per-instance restart policy to avoid shared mutable state.
         # If the subclass defined its own restart_policy as a class attribute,
         # we clone it so _restart_times is not shared across instances.
@@ -130,6 +243,86 @@ class Actor:
         if self._reply_future and not self._reply_future.done():
             self._reply_future.set_result(response)
 
+    async def receive(
+        self,
+        match: type | None = None,
+        timeout: float | None = None,
+    ) -> Any:
+        """Selective receive: wait for and return the next matching message.
+
+        Non-matching messages remain in the inbox for later processing.
+
+        Args:
+            match: If provided, only return messages that are instances of
+                this type.  If ``None``, return the next message regardless
+                of type.
+            timeout: Optional timeout in seconds.  Raises
+                :class:`asyncio.TimeoutError` if no matching message arrives
+                in time.
+
+        Returns:
+            The (unwrapped) message payload.
+        """
+        if match is None:
+            # Fast-path: just get the next message.
+            raw = await self._inbox.get(timeout=timeout)
+            return self._unwrap_raw(raw)
+
+        # Use the inbox's selective-receive, but we need to handle the
+        # Envelope wrapping: scan for Envelopes whose .message is an
+        # instance of match, and also handle _AskEnvelopes.
+        # Because the inbox's receive() matches on the container type, we
+        # do a manual loop using the inbox's internal API.
+        return await self._selective_receive(match, timeout)
+
+    async def _selective_receive(
+        self, match: type, timeout: float | None
+    ) -> Any:
+        """Internal: poll inbox for a message matching *match*, respecting timeout."""
+        deadline: float | None = None
+        if timeout is not None:
+            deadline = time.monotonic() + timeout
+
+        # First scan what's already queued.
+        found = self._scan_inbox_for_match(match)
+        if found is not _SENTINEL:
+            return found
+
+        # Wait for new messages.
+        while True:
+            remaining: float | None = None
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
+
+            raw = await self._inbox._await_queued_message(timeout=remaining)
+            unwrapped = self._unwrap_raw(raw)
+            if isinstance(unwrapped, match):
+                return unwrapped
+            # Stash the raw item so it is not lost.
+            self._inbox._stash.append(raw)
+
+    def _scan_inbox_for_match(self, match: type) -> object:
+        """Scan stash and queue for a matching message (envelope-aware)."""
+        for store in (self._inbox._stash, self._inbox._queue):
+            for i, raw in enumerate(store):
+                unwrapped = self._unwrap_raw(raw)
+                if isinstance(unwrapped, match):
+                    del store[i]
+                    return unwrapped
+        return _SENTINEL
+
+    @staticmethod
+    def _unwrap_raw(raw: Any) -> Any:
+        """Unwrap an Envelope or _AskEnvelope to its payload."""
+        if isinstance(raw, _AskEnvelope):
+            return raw.envelope.message
+        if isinstance(raw, Envelope):
+            return raw.message
+        # Legacy: bare message (should not occur after migration but be safe)
+        return raw
+
     async def stop(self) -> None:
         """Request a graceful shutdown of this actor."""
         self._running = False
@@ -155,7 +348,7 @@ class Actor:
             await self.on_start()
             while self._running:
                 try:
-                    msg = await asyncio.wait_for(self._inbox.get(), timeout=1.0)
+                    raw = await asyncio.wait_for(self._inbox.get(), timeout=1.0)
                 except asyncio.TimeoutError:
                     continue
                 except RuntimeError:
@@ -163,12 +356,19 @@ class Actor:
                     break
 
                 # Unwrap ask() envelopes so on_message sees the real payload.
-                if isinstance(msg, _AskEnvelope):
-                    self._reply_future = msg.reply_future
-                    actual_msg = msg.message
-                else:
+                if isinstance(raw, _AskEnvelope):
+                    self._reply_future = raw.reply_future
+                    self.envelope = raw.envelope
+                    actual_msg = raw.envelope.message
+                elif isinstance(raw, Envelope):
                     self._reply_future = None
-                    actual_msg = msg
+                    self.envelope = raw
+                    actual_msg = raw.message
+                else:
+                    # Legacy bare message — kept for safety
+                    self._reply_future = None
+                    self.envelope = None
+                    actual_msg = raw
 
                 try:
                     result = await self.on_message(actual_msg)
@@ -197,3 +397,15 @@ class Actor:
             self._running = False
             self._task = None
             await self.on_stop()
+            self._notify_watchers()
+
+    def _notify_watchers(self) -> None:
+        """Resolve all watch() futures when the actor stops."""
+        watchers = self._watchers
+        self._watchers = []
+        for fut in watchers:
+            if not fut.done():
+                fut.set_result(None)
+
+
+_SENTINEL = object()

@@ -1,7 +1,15 @@
 """fp-combinators: Lightweight functional programming combinators for Python."""
 
 from fp_combinators._core import pipe, compose, first_some, pipeline, async_pipe
-from fp_combinators._result import Result, Ok, Err, try_pipe, async_try_pipe
+from fp_combinators._result import (
+    Result,
+    Ok,
+    Err,
+    try_pipe,
+    async_try_pipe,
+    sequence,
+    traverse,
+)
 
 __all__ = [
     "pipe",
@@ -14,4 +22,6 @@ __all__ = [
     "Err",
     "try_pipe",
     "async_try_pipe",
+    "sequence",
+    "traverse",
 ]
