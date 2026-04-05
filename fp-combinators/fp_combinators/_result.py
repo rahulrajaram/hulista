@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from collections.abc import Callable
 from typing import Any, Generic, TypeVar, cast
 
 T = TypeVar('T')
@@ -66,6 +66,44 @@ class Result(Generic[T, E]):
         if isinstance(self, Err):
             return f(self.error)
         return cast(Result[T, U], self)
+
+    async def async_map(self, f: Callable[[T], Awaitable[U]]) -> Result[U, E]:
+        """Apply an async function to the Ok value, or pass through Err."""
+        if isinstance(self, Ok):
+            return Ok(await f(self.value))
+        return cast(Result[U, E], self)
+
+    async def async_and_then(
+        self, f: Callable[[T], Awaitable[Result[U, E]]]
+    ) -> Result[U, E]:
+        """Chain an async computation that itself returns a Result (async flatmap)."""
+        if isinstance(self, Ok):
+            return await f(self.value)
+        return cast(Result[U, E], self)
+
+    @classmethod
+    async def from_awaitable(cls, aw: Awaitable[T]) -> Result[T, Exception]:
+        """Await *aw* and wrap the result in Ok, or catch any exception as Err."""
+        try:
+            return Ok(await aw)
+        except Exception as exc:
+            return Err(exc)
+
+    @classmethod
+    def from_call(
+        cls,
+        func: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Result[T, Exception]:
+        """Call *func* with the given arguments; wrap the return value in Ok,
+        or catch any raised exception as Err.
+        """
+        try:
+            return Ok(func(*args, **kwargs))
+        except Exception as exc:
+            return Err(exc)
 
     def __bool__(self) -> bool:
         return self.is_ok()
@@ -133,3 +171,46 @@ async def async_try_pipe(value: Any, /, *funcs: Callable) -> Result:
         except Exception as e:
             return Err(e)
     return Ok(value)
+
+
+def sequence(results: Iterable[Result[T, E]]) -> Result[list[T], E]:
+    """Collect an iterable of Results into a single Result of a list.
+
+    Returns ``Ok(list_of_values)`` when every element is ``Ok``,
+    or the first ``Err`` encountered (short-circuiting).
+
+    Usage::
+
+        sequence([Ok(1), Ok(2), Ok(3)])   # Ok([1, 2, 3])
+        sequence([Ok(1), Err("bad"), Ok(3)])  # Err("bad")
+    """
+    values: list[T] = []
+    for r in results:
+        if isinstance(r, Err):
+            return cast(Result[list[T], E], r)
+        values.append(cast(Ok[T, E], r).value)
+    return Ok(values)
+
+
+def traverse(
+    items: Iterable[T],
+    func: Callable[[T], Result[U, E]],
+) -> Result[list[U], E]:
+    """Apply *func* to each item, collecting results into a single Result.
+
+    Returns ``Ok(list_of_mapped_values)`` when *func* succeeds for every item,
+    or the first ``Err`` returned by *func* (short-circuiting).
+
+    Usage::
+
+        traverse([1, 2, 3], lambda x: Ok(x * 2))   # Ok([2, 4, 6])
+        traverse([1, -1, 3], lambda x: Err("neg") if x < 0 else Ok(x))
+        # Err("neg")
+    """
+    values: list[U] = []
+    for item in items:
+        r = func(item)
+        if isinstance(r, Err):
+            return cast(Result[list[U], E], r)
+        values.append(cast(Ok[U, E], r).value)
+    return Ok(values)

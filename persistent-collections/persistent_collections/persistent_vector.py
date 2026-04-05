@@ -158,6 +158,26 @@ class PersistentVector(collections.abc.Sequence):
         object.__setattr__(v, '_hash', None)
         return v
 
+    # ------------------------------------------------------------------
+    # Serialisation helpers
+    # ------------------------------------------------------------------
+
+    def to_list(self) -> list:
+        """Return a plain Python list with the same elements."""
+        return list(self)
+
+    @classmethod
+    def from_list(cls, lst: list) -> PersistentVector:
+        """Build a PersistentVector from a plain Python list."""
+        return cls(lst)
+
+    def __reduce__(self):
+        return (PersistentVector.from_list, (self.to_list(),))
+
+    def transient(self) -> TransientVector:
+        """Return a mutable transient builder for batch construction."""
+        return TransientVector(self)
+
 
 def _new_path(shift, node):
     """Create a path from root to leaf for a given node."""
@@ -210,3 +230,48 @@ def _iter_node(node, shift):
 
 def _values_equal(left, right):
     return left is right or left == right
+
+
+class TransientVector:
+    """Mutable builder for PersistentVector — batch construction without copies.
+
+    Use as a context manager or call .persistent() to freeze.
+    """
+    __slots__ = ('_items', '_frozen')
+
+    def __init__(self, source: PersistentVector | None = None) -> None:
+        if source is not None:
+            self._items: list = list(source)
+        else:
+            self._items = []
+        self._frozen = False
+
+    def _check_mutable(self) -> None:
+        if self._frozen:
+            raise RuntimeError("TransientVector has been frozen; call transient() again")
+
+    def append(self, value) -> None:
+        """Append *value* to the end of the transient vector."""
+        self._check_mutable()
+        self._items.append(value)
+
+    def __setitem__(self, index: int, value) -> None:
+        self._check_mutable()
+        self._items[index] = value
+
+    def __getitem__(self, index: int):
+        return self._items[index]
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def persistent(self) -> PersistentVector:
+        """Freeze this transient and return an immutable PersistentVector."""
+        self._frozen = True
+        return PersistentVector(self._items)
+
+    def __enter__(self) -> TransientVector:
+        return self
+
+    def __exit__(self, *args) -> None:
+        self._frozen = True

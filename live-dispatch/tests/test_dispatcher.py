@@ -134,13 +134,16 @@ def test_register_rejects_any_annotation():
             return "bad"
 
 
-def test_register_rejects_union_annotation():
-    d = Dispatcher("bad_union")
+def test_register_accepts_union_annotation():
+    """Union annotations are now supported and should not raise."""
+    d = Dispatcher("union_ok")
 
-    with pytest.raises(TypeError, match="plain runtime classes"):
-        @d.register
-        def handle(x: int | str) -> str:
-            return "bad"
+    @d.register
+    def handle(x: int | str) -> str:
+        return f"union:{x}"
+
+    assert d(1) == "union:1"
+    assert d("hi") == "union:hi"
 
 
 def test_register_rejects_partial_required_annotations():
