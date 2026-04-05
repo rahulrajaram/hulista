@@ -21,8 +21,10 @@ jobs:
             allow-prereleases: true
           - python-version: "3.15"
             allow-prereleases: true
+            experimental: true
 
     name: Python ${{ matrix.python-version }}
+    continue-on-error: ${{ matrix.experimental || false }}
 
     steps:
       - uses: actions/checkout@v4
