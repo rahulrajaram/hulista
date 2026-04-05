@@ -252,6 +252,32 @@ def sealed_subclasses(cls: type) -> frozenset[type]:
     return frozenset(getattr(cls, '__sealed_subclasses__', set()))
 
 
+def verify_dispatch_exhaustive(dispatcher: Any, sealed_base: type) -> None:
+    """Verify that a live-dispatch Dispatcher covers all sealed subclasses.
+
+    This is a thin convenience wrapper that calls
+    ``dispatcher.verify_exhaustive(sealed_base)``.  It exists so
+    sealed-typing users can verify dispatch coverage without importing
+    live-dispatch directly.
+
+    Args:
+        dispatcher: A ``live_dispatch.Dispatcher`` instance (or any object
+                    that exposes a ``verify_exhaustive`` method).
+        sealed_base: A class decorated with ``@sealed``.
+
+    Raises:
+        TypeError: If *dispatcher* does not have a ``verify_exhaustive``
+                   method, or if the dispatcher does not fully cover all
+                   registered subclasses of *sealed_base*.
+    """
+    if not hasattr(dispatcher, 'verify_exhaustive'):
+        raise TypeError(
+            f"Expected a Dispatcher with a 'verify_exhaustive' method, "
+            f"got {type(dispatcher).__name__!r}"
+        )
+    dispatcher.verify_exhaustive(sealed_base)
+
+
 def assert_exhaustive(value: Any, *handlers: type) -> None:
     """Assert that handlers cover all sealed subclasses.
 
