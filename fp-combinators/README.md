@@ -161,6 +161,11 @@ Async helpers await any awaitable result, including coroutine objects,
 | `sequence(results)` | `(Iterable[Result[T, E]]) -> Result[list[T], E]` | Collect `Ok` values or return the first `Err` |
 | `traverse(items, func)` | `(Iterable[T], Callable[[T], Result[U, E]]) -> Result[list[U], E]` | Map a Result-returning function over items, short-circuiting on first `Err` |
 | `traverse_all(items, func)` | `(Iterable[T], Callable[[T], Result[U, E]]) -> Result[list[U], list[E]]` | Process every item and collect all error payloads |
+| `async_sequence(results)` | `async (Iterable[Awaitable[Result[T, E]]]) -> Result[list[T], E]` | Sequential async collect — awaits one at a time, short-circuits on first `Err` |
+| `async_traverse(items, func)` | `async (Iterable[T], async T -> Result[U, E]) -> Result[list[U], E]` | Sequential async map, short-circuits on first `Err` |
+| `async_traverse_all(items, func)` | `async (Iterable[T], async T -> Result[U, E]) -> Result[list[U], list[E]]` | Sequential async map, collects all errors |
+
+For concurrent/parallel fan-out, use [`taskgroup-collect`](../taskgroup-collect/) instead.
 
 ## License
 

@@ -10,5 +10,16 @@ See: https://github.com/python/cpython/issues/101581
 
 from taskgroup_collect._collector import CollectorTaskGroup
 from taskgroup_collect._outcome import Failure, Success, TaskOutcome
+from taskgroup_collect._collect import collect_results
+from taskgroup_collect._interop import outcome_to_result, result_to_outcome, outcomes_to_results
 
-__all__ = ["CollectorTaskGroup", "TaskOutcome", "Success", "Failure"]
+__all__ = [
+    "CollectorTaskGroup",
+    "TaskOutcome",
+    "Success",
+    "Failure",
+    "collect_results",
+    "outcome_to_result",
+    "result_to_outcome",
+    "outcomes_to_results",
+]
