@@ -1,6 +1,5 @@
 import pytest
 from dataclasses import dataclass
-from pydantic import Field, PrivateAttr
 from with_update import updatable, with_update
 
 
@@ -236,7 +235,7 @@ class TestPydanticUpdatable:
             with_update(cfg, nonexistent=42)
 
     def test_pydantic_alias_updates_use_alias_keys(self):
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         @updatable
         class Config(BaseModel):
@@ -251,7 +250,7 @@ class TestPydanticUpdatable:
             cfg | {"host": "not-allowed-by-name"}
 
     def test_pydantic_populate_by_name_accepts_field_names(self):
-        from pydantic import BaseModel
+        from pydantic import BaseModel, Field
 
         @updatable
         class Config(BaseModel):
@@ -263,7 +262,7 @@ class TestPydanticUpdatable:
         assert cfg2.host == "0.0.0.0"
 
     def test_pydantic_private_attrs_are_preserved(self):
-        from pydantic import BaseModel
+        from pydantic import BaseModel, PrivateAttr
 
         @updatable
         class Config(BaseModel):
