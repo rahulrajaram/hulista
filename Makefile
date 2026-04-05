@@ -1,6 +1,6 @@
 PYTHON ?= python3
 ROOT := $(abspath .)
-PYTHONPATH := $(ROOT)/asyncio-actors:$(ROOT)/fp-combinators:$(ROOT)/live-dispatch:$(ROOT)/persistent-collections:$(ROOT)/sealed-typing:$(ROOT)/taskgroup-collect:$(ROOT)/with-update
+PYTHONPATH := $(ROOT)/asyncio-actors:$(ROOT)/fp-combinators:$(ROOT)/live-dispatch:$(ROOT)/persistent-collections:$(ROOT)/sealed-typing:$(ROOT)/taskgroup-collect:$(ROOT)/with-update:$(ROOT)/hulista
 PACKAGE_TESTS := \
 	$(ROOT)/asyncio-actors \
 	$(ROOT)/fp-combinators \
@@ -9,6 +9,7 @@ PACKAGE_TESTS := \
 	$(ROOT)/sealed-typing \
 	$(ROOT)/taskgroup-collect \
 	$(ROOT)/with-update \
+	$(ROOT)/hulista \
 	$(ROOT)/tests
 BENCHMARK_TESTS := $(ROOT)/benchmarks
 BUILD_PACKAGES := \
@@ -18,7 +19,8 @@ BUILD_PACKAGES := \
 	persistent-collections \
 	sealed-typing \
 	taskgroup-collect \
-	with-update
+	with-update \
+	hulista
 PYTEST_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning
 BUILD_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning -W error::UserWarning:setuptools
 
