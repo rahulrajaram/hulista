@@ -1,0 +1,35 @@
+[defaults]
+max_mean_s = 0.050
+
+[benchmarks.asyncio_actorref_tell_roundtrip]
+max_mean_s = 0.005
+
+[benchmarks.asyncio_inbox_selective_receive]
+max_mean_s = 0.010
+
+[benchmarks.persistent_map_set_chain]
+max_mean_s = 0.010
+
+[benchmarks.persistent_vector_iteration]
+max_mean_s = 0.010
+
+[benchmarks.live_dispatch_cached_call]
+max_mean_s = 0.002
+
+[benchmarks.fp_pipe_chain]
+max_mean_s = 0.001
+
+[benchmarks.fp_result_map_chain]
+max_mean_s = 0.002
+
+[benchmarks.with_update_dataclass_copy]
+max_mean_s = 0.002
+
+[benchmarks.with_update_pydantic_copy]
+max_mean_s = 0.004
+
+[benchmarks.sealed_assert_exhaustive]
+max_mean_s = 0.001
+
+[benchmarks.taskgroup_successful_fanout]
+max_mean_s = 0.020

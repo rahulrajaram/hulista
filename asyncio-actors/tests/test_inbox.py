@@ -161,3 +161,46 @@ async def test_drain_before_close():
     inbox.close()
     with pytest.raises(RuntimeError):
         await inbox.get()
+
+
+@pytest.mark.asyncio
+async def test_selective_receive_preserves_fifo_for_unmatched_messages():
+    inbox: Inbox[object] = Inbox(maxsize=5)
+    await inbox.put("first")
+    await inbox.put(1)
+    await inbox.put("second")
+
+    matched = await inbox.receive(int)
+    assert matched == 1
+    assert inbox.size == 2
+    assert await inbox.get() == "first"
+    assert await inbox.get() == "second"
+
+
+@pytest.mark.asyncio
+async def test_selective_receive_stashed_messages_count_toward_capacity():
+    inbox: Inbox[object] = Inbox(maxsize=1, policy=OverflowPolicy.BLOCK)
+    await inbox.put("older")
+
+    waiter = asyncio.create_task(inbox.receive(int, timeout=0.2))
+    await asyncio.sleep(0.02)
+    assert inbox.size == 1
+    assert inbox.full is True
+
+    blocked_put_finished = False
+
+    async def blocked_put():
+        nonlocal blocked_put_finished
+        await inbox.put(99)
+        blocked_put_finished = True
+
+    put_task = asyncio.create_task(blocked_put())
+    await asyncio.sleep(0.02)
+    assert blocked_put_finished is False
+    assert inbox.size == 1
+
+    assert await inbox.get() == "older"
+    await asyncio.wait_for(put_task, timeout=1.0)
+    assert blocked_put_finished is True
+    assert await asyncio.wait_for(waiter, timeout=1.0) == 99
+    assert inbox.size == 0

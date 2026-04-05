@@ -5,6 +5,9 @@ on:
     branches: [master, main]
   pull_request:
     branches: [master, main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -34,7 +37,10 @@ jobs:
           allow-prereleases: ${{ matrix.allow-prereleases || false }}
 
       - name: Install test dependencies
-        run: uv pip install --system pytest pytest-asyncio
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build
+
+      - name: Install pydantic (optional, unavailable on some pre-release Pythons)
+        run: uv pip install --system pydantic || true
 
       - name: Unit tests — persistent-collections
         run: cd persistent-collections && python -m pytest tests/ -v
@@ -59,3 +65,147 @@ jobs:
 
       - name: Integration tests
         run: python -m pytest tests/test_integration.py -v
+
+  coverage:
+    runs-on: ubuntu-latest
+    name: Coverage gates
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install repo tooling
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build pydantic
+
+      - name: Coverage
+        run: make coverage
+
+      - name: Upload coverage JSON
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-json
+          path: .benchmarks/coverage.json
+          if-no-files-found: error
+
+  typecheck:
+    runs-on: ubuntu-latest
+    name: Typecheck
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install repo tooling
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build pydantic
+
+      - name: Mypy
+        run: make typecheck
+
+  deprecationcheck:
+    runs-on: ubuntu-latest
+    name: Deprecation check
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install repo tooling
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build pydantic
+
+      - name: Warnings as errors
+        run: make deprecationcheck
+
+  build:
+    runs-on: ubuntu-latest
+    name: Build packages
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: uv pip install --system build
+
+      - name: Build all packages
+        run: make build
+
+  benchmark:
+    runs-on: ubuntu-latest
+    name: Benchmarks
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install benchmark dependencies
+        run: uv pip install --system pytest pytest-asyncio pytest-benchmark pydantic
+
+      - name: Run benchmark suite
+        run: make bench
+
+      - name: Upload benchmark JSON
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-json
+          path: .benchmarks/benchmark-results.json
+          if-no-files-found: error
+
+  sealed-typing-py310:
+    runs-on: ubuntu-latest
+    name: sealed-typing Python 3.10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install test dependencies
+        run: uv pip install --system pytest
+
+      - name: Unit tests — sealed-typing
+        run: cd sealed-typing && python -m pytest tests/ -v

@@ -1,0 +1,21 @@
+[run]
+branch = True
+relative_files = True
+source =
+    asyncio-actors/asyncio_actors
+    fp-combinators/fp_combinators
+    live-dispatch/live_dispatch
+    persistent-collections/persistent_collections
+    sealed-typing/sealed_typing
+    taskgroup-collect/taskgroup_collect
+    with-update/with_update
+
+[report]
+show_missing = True
+skip_covered = False
+precision = 2
+exclude_also =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    if TYPE_CHECKING:

@@ -1,6 +1,8 @@
 # sealed-typing
 
-Sealed classes for Python — restrict subclassing to the defining module, with runtime exhaustiveness checking for `match`/`case`.
+Sealed classes for Python: restrict subclassing to the defining module, then
+use a runtime helper to assert that your handled class patterns cover the known
+sealed descendants.
 
 ## Install
 
@@ -44,17 +46,25 @@ def area(shape: Shape) -> float:
 | `@sealed` | `(cls: type) -> type` | Decorator — restricts subclassing to the same module |
 | `is_sealed(cls)` | `(type) -> bool` | Check if a class is sealed |
 | `sealed_subclasses(cls)` | `(type) -> frozenset[type]` | Return all registered subclasses |
-| `assert_exhaustive(value, *handlers)` | `(Any, *type) -> None` | Raise `TypeError` if handlers don't cover all subclasses |
+| `assert_exhaustive(value, *handlers)` | `(Any, *type) -> None` | Raise `TypeError` if the provided handler classes do not cover the known sealed descendants |
 
 ### How `@sealed` works
 
 1. Marks the class with `__sealed__ = True`
 2. Overrides `__init_subclass__` to reject subclasses from other modules
-3. Tracks subclasses in `__sealed_subclasses__`
+3. Preserves any original `__init_subclass__` hook on the sealed base
+4. Tracks known descendants in `__sealed_subclasses__`
 
 ### `assert_exhaustive`
 
-Walks the MRO to find the sealed base, compares provided handler types against `sealed_subclasses()`, and raises `TypeError` listing any missing cases.
+Walks the MRO to find the sealed base, then checks whether the provided handler
+classes cover the known descendants of that sealed base. A handler for a parent
+class counts for its descendants, matching Python class-pattern behavior. If
+the sealed base itself is concrete and the runtime value is an instance of that
+base, the base class must also be covered.
+
+This is a runtime assertion helper, not static type-checker integration.
+Multiple sealed bases are rejected as unsupported.
 
 ## Upstream context
 

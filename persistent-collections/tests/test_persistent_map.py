@@ -191,6 +191,17 @@ class TestLookup:
         m = PersistentMap()
         assert 'anything' not in m
 
+    def test_non_reflexive_key_round_trips_by_identity(self):
+        nan = float('nan')
+        m = PersistentMap().set(nan, 'value')
+        assert nan in m
+        assert m[nan] == 'value'
+        assert m.get(nan) == 'value'
+
+    def test_distinct_non_reflexive_key_is_not_found(self):
+        m = PersistentMap().set(float('nan'), 'value')
+        assert float('nan') not in m
+
 
 # ---------------------------------------------------------------------------
 # __len__
@@ -250,6 +261,29 @@ class TestIteration:
         d = {i: i * 2 for i in range(75)}
         m = PersistentMap.from_dict(d)
         assert sum(1 for _ in m) == len(m)
+
+    def test_items_support_non_reflexive_keys(self):
+        nan = float('nan')
+        m = PersistentMap().set(nan, 'value')
+        items = list(m.items())
+        assert len(items) == 1
+        assert items[0][0] is nan
+        assert items[0][1] == 'value'
+
+    def test_repr_supports_non_reflexive_keys(self):
+        nan = float('nan')
+        m = PersistentMap().set(nan, 'value')
+        rendered = repr(m)
+        assert rendered.startswith("PersistentMap({")
+        assert "'value'" in rendered
+
+
+class TestDeleteNonReflexiveKey:
+    def test_delete_same_object_non_reflexive_key(self):
+        nan = float('nan')
+        m = PersistentMap().set(nan, 'value')
+        m2 = m.delete(nan)
+        assert len(m2) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -363,13 +397,13 @@ class TestImmutability:
 
     def test_set_does_not_mutate_original(self):
         m1 = PersistentMap.from_dict({'a': 1})
-        m2 = m1.set('b', 2)
+        _ = m1.set('b', 2)
         assert len(m1) == 1
         assert 'b' not in m1
 
     def test_delete_does_not_mutate_original(self):
         m1 = PersistentMap.from_dict({'a': 1, 'b': 2})
-        m2 = m1.delete('a')
+        _ = m1.delete('a')
         assert 'a' in m1
         assert len(m1) == 2
 

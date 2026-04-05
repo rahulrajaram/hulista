@@ -50,15 +50,9 @@ class TestSealedDecorator:
 
     def test_subclass_outside_module_raises(self):
         """Subclassing in a different module should raise TypeError."""
-        # Simulate by temporarily changing __sealed_module__
-        original = Shape.__sealed_module__
-        Shape.__sealed_module__ = "some.other.module"
-        try:
-            with pytest.raises(TypeError, match="Cannot subclass sealed class"):
-                class Hexagon(Shape):
-                    pass
-        finally:
-            Shape.__sealed_module__ = original
+        with pytest.raises(TypeError, match="Cannot subclass sealed class"):
+            namespace = {"Shape": Shape, "__name__": "some.other.module"}
+            exec("class Hexagon(Shape):\n    pass\n", namespace)
 
     def test_non_sealed_raises_on_sealed_subclasses(self):
         with pytest.raises(TypeError, match="is not a sealed class"):
@@ -83,6 +77,15 @@ class TestAssertExhaustive:
     def test_non_sealed_value_raises(self):
         with pytest.raises(TypeError, match="is not a subclass of any sealed class"):
             assert_exhaustive(42, int)
+
+    def test_invalid_handler_type_raises(self):
+        c = Circle(5.0)
+        with pytest.raises(TypeError, match="Invalid handlers"):
+            assert_exhaustive(c, Circle, int)
+
+    def test_concrete_sealed_base_must_be_covered(self):
+        with pytest.raises(TypeError, match="Missing handlers for: Shape"):
+            assert_exhaustive(Shape(), Circle, Square, Triangle)
 
 
 class TestMatchIntegration:
@@ -143,3 +146,47 @@ class TestSealedInheritanceChain:
         assert not is_sealed(Child)
         assert is_sealed(Base)
         assert Child in sealed_subclasses(Base)
+
+    def test_original_init_subclass_receives_real_subclass(self):
+        @sealed
+        class Base:
+            seen: list[str] = []
+
+            @classmethod
+            def __init_subclass__(cls, **kwargs):
+                Base.seen.append(cls.__name__)
+                super().__init_subclass__(**kwargs)
+
+        class Child(Base):
+            pass
+
+        class GrandChild(Child):
+            pass
+
+        assert Base.seen == ["Child", "GrandChild"]
+
+    def test_exhaustive_superclass_handler_covers_descendants(self):
+        @sealed
+        class Base:
+            pass
+
+        class Child(Base):
+            pass
+
+        class GrandChild(Child):
+            pass
+
+        assert_exhaustive(GrandChild(), Child)
+
+    def test_multiple_sealed_bases_raise(self):
+        @sealed
+        class Left:
+            pass
+
+        @sealed
+        class Right:
+            pass
+
+        with pytest.raises(TypeError, match="multiple sealed bases"):
+            class Both(Left, Right):
+                pass

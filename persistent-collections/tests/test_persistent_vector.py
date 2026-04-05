@@ -360,6 +360,16 @@ class TestEquality:
         # These share _root; equality still works correctly
         assert v != base
 
+    def test_equal_to_list_with_same_object_nan(self):
+        nan = float("nan")
+        v = PersistentVector([nan])
+        assert v == [nan]
+
+    def test_equal_to_tuple_with_same_object_nan(self):
+        nan = float("nan")
+        v = PersistentVector([nan])
+        assert v == (nan,)
+
 
 # ---------------------------------------------------------------------------
 # Immutability

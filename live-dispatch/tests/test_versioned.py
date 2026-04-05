@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from live_dispatch import Dispatcher, versioned
+from live_dispatch import Dispatcher, predicate, versioned
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +35,7 @@ def test_versioned_saves_snapshot_on_enter():
 
     with versioned(d) as v:
         assert v._snapshot is not None
-        assert len(v._snapshot) == original_count
+        assert len(v._snapshot["handlers"]) == original_count
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +83,20 @@ def test_rollback_after_clear():
 
     # After rollback, original handler is back
     assert d(1) == "original"
+
+
+def test_rollback_restores_fallback():
+    d = make_dispatcher_with_int_handler()
+
+    @d.fallback
+    def original_fallback(*args):
+        return "fallback"
+
+    with versioned(d) as v:
+        d.clear()
+        v.rollback()
+
+    assert d("hi") == "fallback"
 
 
 def test_rollback_to_empty_dispatcher():
@@ -213,3 +227,24 @@ def test_rollback_is_idempotent():
 
     assert len(d.handlers()) == 1
     assert d(1) == "original"
+
+
+def test_rollback_restores_predicate_cache_state():
+    d = Dispatcher("predicates")
+
+    @d.register(priority=1)
+    def handle_int(x: int) -> str:
+        return "plain"
+
+    assert d._has_predicates is False
+
+    with versioned(d) as v:
+        @d.register(priority=2)
+        @predicate(lambda x: x % 2 == 0)
+        def handle_even(x: int) -> str:
+            return "even"
+
+        assert d._has_predicates is True
+        v.rollback()
+
+    assert d._has_predicates is False

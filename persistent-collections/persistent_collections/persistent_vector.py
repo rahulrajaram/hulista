@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import collections.abc
-from typing import Any, Iterator
+from typing import Iterator
 
 BITS = 5
 BRANCH_FACTOR = 1 << BITS  # 32
@@ -99,8 +99,9 @@ class PersistentVector(collections.abc.Sequence):
         return self._count
 
     def __iter__(self) -> Iterator:
-        for i in range(self._count):
-            yield self[i]
+        if self._root:
+            yield from _iter_node(self._root, self._shift)
+        yield from self._tail
 
     def __hash__(self):
         h = self._hash
@@ -115,15 +116,15 @@ class PersistentVector(collections.abc.Sequence):
                 return False
             if self._root is other._root and self._tail == other._tail:
                 return True
-            return all(a == b for a, b in zip(self, other))
+            return all(_values_equal(a, b) for a, b in zip(self, other))
         if isinstance(other, (list, tuple)):
             if len(self) != len(other):
                 return False
-            return all(a == b for a, b in zip(self, other))
+            return all(_values_equal(a, b) for a, b in zip(self, other))
         if isinstance(other, collections.abc.Sequence) and not isinstance(other, (str, bytes)):
             if len(self) != len(other):
                 return False
-            return all(a == b for a, b in zip(self, other))
+            return all(_values_equal(a, b) for a, b in zip(self, other))
         return NotImplemented
 
     def __repr__(self):
@@ -196,3 +197,16 @@ def _assoc_node(shift, node, index, value):
     new_node = list(node)
     new_node[subidx] = new_child
     return tuple(new_node)
+
+
+def _iter_node(node, shift):
+    if shift == BITS:
+        for leaf in node:
+            yield from leaf
+        return
+    for child in node:
+        yield from _iter_node(child, shift - BITS)
+
+
+def _values_equal(left, right):
+    return left is right or left == right

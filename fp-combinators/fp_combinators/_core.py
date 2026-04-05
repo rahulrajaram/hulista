@@ -1,6 +1,9 @@
 """Lightweight FP combinators for Python."""
 from __future__ import annotations
-from typing import TypeVar, Callable, Any
+
+import inspect
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 T = TypeVar('T')
 
@@ -25,7 +28,7 @@ def compose(*funcs: Callable) -> Callable:
     if len(funcs) == 1:
         return funcs[0]
 
-    def _composed(*args, **kwargs):
+    def _composed(*args: Any, **kwargs: Any) -> Any:
         result = funcs[-1](*args, **kwargs)
         for f in reversed(funcs[:-1]):
             result = f(result)
@@ -45,7 +48,7 @@ def first_some(*funcs: Callable[..., T | None]) -> Callable[..., T | None]:
     if not funcs:
         raise TypeError("first_some requires at least one function")
 
-    def _first(*args, **kwargs):
+    def _first(*args: Any, **kwargs: Any) -> T | None:
         for f in funcs:
             result = f(*args, **kwargs)
             if result is not None:
@@ -69,7 +72,7 @@ def pipeline(*funcs: Callable) -> Callable:
     if len(funcs) == 1:
         return funcs[0]
 
-    def _pipeline(*args, **kwargs):
+    def _pipeline(*args: Any, **kwargs: Any) -> Any:
         result = funcs[0](*args, **kwargs)
         for f in funcs[1:]:
             result = f(result)
@@ -79,3 +82,20 @@ def pipeline(*funcs: Callable) -> Callable:
         getattr(f, '__qualname__', repr(f)) for f in funcs
     )
     return _pipeline
+
+
+async def async_pipe(value: Any, /, *funcs: Callable) -> Any:
+    """Thread a value through functions left-to-right, awaiting coroutines.
+
+    Like pipe(), but transparently handles both sync and async functions.
+    If a function returns a coroutine, it is awaited before passing to the next.
+
+    async_pipe(x, sync_fn, async_fn, sync_fn) works seamlessly.
+    """
+    for f in funcs:
+        result = f(value)
+        if inspect.isawaitable(result):
+            value = await result
+        else:
+            value = result
+    return value

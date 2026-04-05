@@ -1,6 +1,8 @@
 # with-update
 
-Record update syntax for frozen dataclasses — the `|` operator and `.with_update()` method so you never need raw `dataclasses.replace()`.
+Copy-update syntax for dataclasses and Pydantic models — the `|` operator and
+`.with_update()` method so you do not need raw `dataclasses.replace()` or
+hand-rolled model-copy helpers. Includes runtime field validation.
 
 ## Install
 
@@ -45,7 +47,7 @@ new = cfg.with_update(port=9090, debug=True)
 
 | Name | Signature | Description |
 |---|---|---|
-| `@updatable` | `(cls: type) -> type` | Decorator — adds `__or__` and `with_update` to a frozen dataclass or Pydantic model |
+| `@updatable` | `(cls: type) -> type` | Decorator — adds `__or__` and `with_update` to a dataclass or Pydantic model |
 | `with_update(obj, **changes)` | `(obj, **Any) -> obj` | Standalone function — works on any dataclass or Pydantic model instance |
 
 ### `@updatable` adds
@@ -55,11 +57,25 @@ new = cfg.with_update(port=9090, debug=True)
 | `obj \| dict` | `(dict) -> Self` | Return new instance with fields from dict applied |
 | `.with_update(**kw)` | `(**Any) -> Self` | Return new instance with keyword fields applied |
 
-Works with both frozen dataclasses and Pydantic `BaseModel` subclasses.
+Works with dataclasses and Pydantic `BaseModel` subclasses. For Pydantic v2,
+updates are validated, alias-aware, and preserve private attrs plus
+`model_fields_set`.
+
+### Runtime field validation
+
+The `|` operator validates field names at runtime. Invalid fields raise `TypeError` with a clear message:
+
+```python
+cfg = Config()
+cfg | {"nonexistent": 42}
+# TypeError: Invalid field(s) for Config: nonexistent. Valid fields: debug, host, port
+```
 
 ## Upstream context
 
-`dataclasses.replace()` works but reads poorly when chained or nested. The `|` operator mirrors `dict | dict` (PEP 584) and provides the same ergonomics for immutable records.
+`dataclasses.replace()` works but reads poorly when chained or nested. The `|`
+operator mirrors `dict | dict` (PEP 584) and provides the same ergonomics for
+copy-update workflows on record-like objects.
 
 - [PEP 584 — Add Union Operators To dict](https://peps.python.org/pep-0584/)
 - [dataclasses.replace()](https://docs.python.org/3/library/dataclasses.html#dataclasses.replace)

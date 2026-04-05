@@ -14,5 +14,17 @@ venv/
 .tox/
 htmlcov/
 .coverage
+.coverage.*
+.benchmarks/
+coverage.json
+benchmark-results.json
 *.cover
 .pymon
+.cultivar/
+
+# Local planning and agent orchestration artifacts
+IMPLEMENTATION_PLAN.md
+PROMPT.md
+.yarli/
+AGENTS.md
+agents.md

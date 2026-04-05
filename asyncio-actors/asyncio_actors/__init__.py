@@ -6,6 +6,8 @@ Provides:
 - :class:`Inbox` / :class:`OverflowPolicy` / :class:`InboxFull` — bounded queue
 - :class:`SupervisionStrategy` / :class:`RestartPolicy` — supervision configuration
 - :class:`PersistentBridge` — async-sync bridge for monitor-thread patterns
+- :class:`Supervisor` / :class:`ChildSpec` — hierarchical supervision
+- :class:`CircuitBreaker` / :class:`CircuitState` — failure management
 """
 
 from asyncio_actors.actor import Actor, ActorRef
@@ -13,6 +15,10 @@ from asyncio_actors.system import ActorSystem
 from asyncio_actors.inbox import Inbox, OverflowPolicy, InboxFull
 from asyncio_actors.supervision import SupervisionStrategy, RestartPolicy
 from asyncio_actors.bridge import PersistentBridge
+from asyncio_actors.supervisor import (
+    Supervisor, ChildSpec, SupervisorStrategy, RestartType,
+)
+from asyncio_actors.circuit_breaker import CircuitBreaker, CircuitState, CircuitOpenError
 
 __all__ = [
     "Actor",
@@ -24,6 +30,13 @@ __all__ = [
     "SupervisionStrategy",
     "RestartPolicy",
     "PersistentBridge",
+    "Supervisor",
+    "ChildSpec",
+    "SupervisorStrategy",
+    "RestartType",
+    "CircuitBreaker",
+    "CircuitState",
+    "CircuitOpenError",
 ]
 
 __version__ = "0.1.0"

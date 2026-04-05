@@ -1,6 +1,7 @@
 # taskgroup-collect
 
-A `TaskGroup` variant that runs **all** tasks to completion and collects errors, instead of cancelling siblings on the first failure.
+A `TaskGroup` variant that runs **all** tasks to completion and collects errors,
+instead of cancelling siblings on the first failure.
 
 ## Install
 
@@ -44,6 +45,12 @@ async with CollectorTaskGroup() as tg:
 # BaseExceptionGroup with t1's error; t2/t3 results available
 ```
 
+There is one more semantic difference from stdlib `TaskGroup`: if a child task
+fails while the `async with` body is still running, the body continues to run
+until it exits normally or raises on its own. You can even create more tasks in
+that same block after an earlier child has already failed. Errors are still
+collected and raised on exit.
+
 ## API reference
 
 | Name | Signature | Description |
@@ -52,7 +59,14 @@ async with CollectorTaskGroup() as tg:
 | `.create_task(coro)` | `(coro, **kw) -> asyncio.Task` | Spawn a task in the group |
 | `async with ... as tg:` | — | Context manager; raises `BaseExceptionGroup` on exit if any task failed |
 
-External cancellation of the parent task still propagates to children normally — only the abort-on-first-error behavior is changed.
+External cancellation of the parent task still propagates to children normally.
+Compared with stdlib `TaskGroup`, this package changes two things:
+- sibling tasks are not cancelled on child failure
+- child failure does not interrupt the active `async with` body
+
+Two more details are important:
+- a child that ends with `CancelledError` is treated as cancelled, not collected
+- `KeyboardInterrupt` and `SystemExit` win over ordinary error aggregation
 
 ## Upstream context
 
