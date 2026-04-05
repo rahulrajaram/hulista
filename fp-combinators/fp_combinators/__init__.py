@@ -22,6 +22,9 @@ from fp_combinators._result import (
     sequence,
     traverse,
     traverse_all,
+    async_sequence,
+    async_traverse,
+    async_traverse_all,
 )
 
 __all__ = [
@@ -44,4 +47,7 @@ __all__ = [
     "sequence",
     "traverse",
     "traverse_all",
+    "async_sequence",
+    "async_traverse",
+    "async_traverse_all",
 ]

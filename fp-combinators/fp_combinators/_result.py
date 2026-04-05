@@ -232,3 +232,100 @@ def traverse_all(
     if errors:
         return Err(errors)
     return Ok(values)
+
+
+async def async_sequence(
+    results: Iterable[Awaitable[Result[T, E]]],
+) -> Result[list[T], E]:
+    """Sequential async version of sequence — awaits one Result at a time, in order.
+
+    Accepts an iterable of awaitables that each resolve to a ``Result[T, E]``.
+    Awaits them one at a time (sequential, not concurrent). Returns
+    ``Ok(list_of_values)`` if all are ``Ok``, or the first ``Err`` encountered
+    (short-circuiting — remaining awaitables are NOT awaited).
+
+    For concurrent/parallel fan-out, use ``taskgroup-collect`` instead.
+
+    Usage::
+
+        async def fetch(url: str) -> Result[str, str]: ...
+
+        awaitables = [fetch(u) for u in urls]
+        result = await async_sequence(awaitables)
+        # Ok([body1, body2, ...]) or first Err
+    """
+    values: list[T] = []
+    for aw in results:
+        r = await aw
+        if isinstance(r, Err):
+            return cast(Result[list[T], E], r)
+        values.append(cast(Ok[T, E], r).value)
+    return Ok(values)
+
+
+async def async_traverse(
+    items: Iterable[T],
+    func: Callable[[T], Awaitable[Result[U, E]]],
+) -> Result[list[U], E]:
+    """Sequential async version of traverse — applies an async func one item at a time.
+
+    Applies *func* to each item sequentially (one at a time, in order — not
+    concurrently). Returns ``Ok(list_of_mapped_values)`` if *func* succeeds for
+    every item, or the first ``Err`` returned by *func* (short-circuiting —
+    remaining items are NOT processed).
+
+    For concurrent/parallel fan-out, use ``taskgroup-collect`` instead.
+
+    Usage::
+
+        async def validate(x: int) -> Result[int, str]:
+            return Ok(x * 2) if x > 0 else Err("non-positive")
+
+        result = await async_traverse([1, 2, 3], validate)
+        # Ok([2, 4, 6])
+
+        result = await async_traverse([1, -1, 3], validate)
+        # Err("non-positive")  — item 3 is never processed
+    """
+    values: list[U] = []
+    for item in items:
+        r = await func(item)
+        if isinstance(r, Err):
+            return cast(Result[list[U], E], r)
+        values.append(cast(Ok[U, E], r).value)
+    return Ok(values)
+
+
+async def async_traverse_all(
+    items: Iterable[T],
+    func: Callable[[T], Awaitable[Result[U, E]]],
+) -> Result[list[U], list[E]]:
+    """Sequential async version of traverse_all — applies an async func to every item.
+
+    Applies *func* to every item one at a time, in order (sequential, not
+    concurrent). Unlike ``async_traverse``, this does NOT short-circuit on the
+    first error — it processes all items and collects every error. Returns
+    ``Ok(list_of_values)`` when all succeed, or ``Err(list_of_errors)`` when any
+    fail (all errors collected).
+
+    For concurrent/parallel fan-out, use ``taskgroup-collect`` instead.
+
+    Usage::
+
+        async def validate(x: int) -> Result[int, str]:
+            return Ok(x * 2) if x > 0 else Err(f"bad: {x}")
+
+        result = await async_traverse_all([1, -1, 3, -2], validate)
+        # Err(["bad: -1", "bad: -2"])  — all items were processed
+    """
+    values: list[U] = []
+    errors: list[E] = []
+    for item in items:
+        r = await func(item)
+        if isinstance(r, Err):
+            errors.append(cast(Err[U, E], r).error)
+            continue
+        values.append(cast(Ok[U, E], r).value)
+    if errors:
+        return Err(errors)
+    return Ok(values)
