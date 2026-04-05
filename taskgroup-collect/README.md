@@ -55,9 +55,14 @@ collected and raised on exit.
 
 | Name | Signature | Description |
 |---|---|---|
-| `CollectorTaskGroup()` | `() -> CollectorTaskGroup` | Create a collector group |
+| `CollectorTaskGroup(*, limit=None)` | `(*, int \| None) -> CollectorTaskGroup` | Create a collector group with optional concurrency limit |
 | `.create_task(coro)` | `(coro, **kw) -> asyncio.Task` | Spawn a task in the group |
+| `.outcomes()` | `() -> list[TaskOutcome]` | Per-task `Success`/`Failure` outcomes in creation order (call after exit) |
 | `async with ... as tg:` | — | Context manager; raises `BaseExceptionGroup` on exit if any task failed |
+| `collect_results(coros, *, limit=None)` | `async (Iterable[Coroutine], *, int \| None) -> list[TaskOutcome]` | Convenience wrapper — run coroutines concurrently, return outcomes (never raises) |
+| `outcome_to_result(outcome)` | `(TaskOutcome[T]) -> Result[T, BaseException]` | Convert `TaskOutcome` to fp-combinators `Result` (requires fp-combinators) |
+| `result_to_outcome(result)` | `(Result[T, E]) -> TaskOutcome[T]` | Convert fp-combinators `Result` to `TaskOutcome` (Err must be BaseException) |
+| `outcomes_to_results(outcomes)` | `(Iterable[TaskOutcome]) -> list[Result]` | Bulk convert outcomes to Results |
 
 External cancellation of the parent task still propagates to children normally.
 Compared with stdlib `TaskGroup`, this package changes two things:
