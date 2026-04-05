@@ -1,0 +1,82 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - ci
+
+  - package-ecosystem: pip
+    directory: "/asyncio-actors"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/fp-combinators"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/live-dispatch"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/persistent-collections"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/sealed-typing"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/taskgroup-collect"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/with-update"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python
+
+  - package-ecosystem: pip
+    directory: "/hulista"
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - python

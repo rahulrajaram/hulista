@@ -10,7 +10,7 @@ Functional programming and structured-concurrency building blocks for Python, bo
 | [sealed-typing](sealed-typing/) | `@sealed` classes with runtime exhaustiveness checking for `match`/`case` | >= 3.10 |
 | [asyncio-actors](asyncio-actors/) | OTP-inspired actors with bounded inboxes, hierarchical supervision, circuit breakers, selective receive, and async-sync bridge | >= 3.11 |
 | [taskgroup-collect](taskgroup-collect/) | `TaskGroup` variant that collects all errors instead of cancelling on first failure | >= 3.11 |
-| [fp-combinators](fp-combinators/) | `pipe`, `compose`, `first_some`, `pipeline`, `async_pipe`, and `Result`/`Ok`/`Err` error handling | >= 3.10 |
+| [fp-combinators](fp-combinators/) | `pipe`, `compose`, `when`, `traced_pipe`, `resilient_pipe`, async variants, and `Result`/`Ok`/`Err` error handling | >= 3.10 |
 | [live-dispatch](live-dispatch/) | Runtime-extensible dispatch: type dispatch, predicate dispatch, async dispatch, versioned rollback, and dispatch caching | >= 3.10 |
 | [with-update](with-update/) | `\|` operator and `.with_update()` for frozen dataclasses and Pydantic models, with runtime field validation | >= 3.10 |
 
@@ -165,10 +165,15 @@ The packages compose into a layered system:
 - `pipe(value, *funcs)` — thread value through functions left-to-right
 - `compose(*funcs)` — compose functions right-to-left
 - `pipeline(*funcs)` — create a reusable left-to-right callable
+- `when(predicate, fn)` — apply a stage only when a predicate matches
+- `traced_pipe(value, *funcs)` — return `(final_value, trace)` with per-stage names, change flags, and durations
+- `resilient_pipe(value, *funcs, on_error=...)` — continue past stage failures with the last good value or a callback replacement
 - `first_some(*funcs)` — short-circuit on first non-None result
 - `async_pipe(value, *funcs)` — transparently handles sync and async functions
+- `async_traced_pipe(value, *funcs)` / `async_resilient_pipe(value, *funcs, on_error=...)` — async-aware trace and fail-soft variants
 - `Result[T, E]` / `Ok(value)` / `Err(error)` — typed error handling without exceptions
 - `try_pipe(value, *funcs)` — error-aware pipeline that catches exceptions into `Err`
+- `traverse_all(items, func)` — collect every `Err` payload instead of short-circuiting on the first failure
 
 ### live-dispatch
 

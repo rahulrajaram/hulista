@@ -9,6 +9,14 @@ description = "Record update syntax for frozen dataclasses and Pydantic models v
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
+authors = [{name = "Rahul Rajaram", email = "rahulrajaram2005@gmail.com"}]
+keywords = ["dataclasses", "pydantic", "record-update", "immutable", "validation"]
+
+[project.urls]
+Homepage = "https://github.com/rahulrajaram/hulista"
+Repository = "https://github.com/rahulrajaram/hulista"
+"Bug Tracker" = "https://github.com/rahulrajaram/hulista/issues"
+Changelog = "https://github.com/rahulrajaram/hulista/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
 pydantic = ["pydantic>=2.0"]

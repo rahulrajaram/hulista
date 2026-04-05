@@ -1,6 +1,6 @@
 # fp-combinators
 
-Lightweight functional programming combinators for Python — `pipe`, `compose`, `first_some`, `pipeline`, `async_pipe`, `try_pipe`, `async_try_pipe`, and typed error handling with `Result`/`Ok`/`Err`.
+Lightweight functional programming combinators for Python — `pipe`, `compose`, `first_some`, `pipeline`, `when`, `traced_pipe`, `resilient_pipe`, `async_pipe`, `async_traced_pipe`, `async_resilient_pipe`, `try_pipe`, `async_try_pipe`, and typed error handling with `Result`/`Ok`/`Err`.
 
 ## Install
 
@@ -90,6 +90,33 @@ safe = asyncio.run(async_try_pipe("https://example.com", fetch, parse, validate)
 assert safe == Ok({"raw": "data from https://example.com"})
 ```
 
+### Guarded, traced, and fail-soft stages
+
+```python
+from fp_combinators import resilient_pipe, traced_pipe, when
+
+events = []
+
+def record_error(stage, exc, value):
+    events.append((stage.__name__, str(exc), value))
+    return value
+
+result = resilient_pipe(
+    "  hello  ",
+    str.strip,
+    when(lambda s: bool(s), str.upper),
+    lambda s: (_ for _ in ()).throw(ValueError("boom")),
+    lambda s: f"{s}!",
+    on_error=record_error,
+)
+assert result == "HELLO!"
+assert events == [("<lambda>", "boom", "HELLO")]
+
+final_value, trace = traced_pipe("  hello  ", str.strip, str.upper)
+assert final_value == "HELLO"
+assert trace[0].name == "strip"
+```
+
 ## API reference
 
 | Function | Signature | Description |
@@ -97,8 +124,13 @@ assert safe == Ok({"raw": "data from https://example.com"})
 | `pipe(value, *funcs)` | `(T, *Callable) -> R` | Thread value through functions left-to-right |
 | `compose(*funcs)` | `(*Callable) -> Callable` | Compose functions right-to-left |
 | `pipeline(*funcs)` | `(*Callable) -> Callable` | Create a left-to-right pipeline callable |
+| `when(predicate, fn)` | `(Callable[[T], bool], Callable[[T], U]) -> Callable[[T], T \| U]` | Apply `fn` only when `predicate(value)` is truthy |
+| `traced_pipe(value, *funcs)` | `(T, *Callable) -> tuple[R, list[TraceEntry]]` | Run a pipeline and capture per-stage trace entries |
+| `resilient_pipe(value, *funcs, on_error=...)` | `(T, *Callable) -> R` | Continue past stage failures using the last good value or callback replacement |
 | `first_some(*funcs)` | `(*Callable[..., T\|None]) -> Callable[..., T\|None]` | Return first non-None result |
 | `async_pipe(value, *funcs)` | `async (T, *Callable) -> R` | Thread value through sync/async functions |
+| `async_traced_pipe(value, *funcs)` | `async (T, *Callable) -> tuple[R, list[TraceEntry]]` | Async trace-aware pipeline |
+| `async_resilient_pipe(value, *funcs, on_error=...)` | `async (T, *Callable) -> R` | Async fail-soft pipeline |
 | `try_pipe(value, *funcs)` | `(T, *Callable) -> Result[R, Exception]` | Error-aware pipeline |
 | `async_try_pipe(value, *funcs)` | `async (T, *Callable) -> Result[R, Exception]` | Async error-aware pipeline |
 
@@ -121,6 +153,14 @@ All combinators set `__qualname__` on the returned callable for debuggability.
 Async helpers await any awaitable result, including coroutine objects,
 `asyncio.Future`, `asyncio.Task`, and custom objects that implement
 `__await__()`.
+
+### Batch Result helpers
+
+| Function | Signature | Description |
+|---|---|---|
+| `sequence(results)` | `(Iterable[Result[T, E]]) -> Result[list[T], E]` | Collect `Ok` values or return the first `Err` |
+| `traverse(items, func)` | `(Iterable[T], Callable[[T], Result[U, E]]) -> Result[list[U], E]` | Map a Result-returning function over items, short-circuiting on first `Err` |
+| `traverse_all(items, func)` | `(Iterable[T], Callable[[T], Result[U, E]]) -> Result[list[U], list[E]]` | Process every item and collect all error payloads |
 
 ## License
 

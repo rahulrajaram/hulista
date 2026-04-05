@@ -9,9 +9,14 @@ description = "TaskGroup variant that collects all errors instead of aborting on
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [{name = "Rahul Rajaram", email = "rahulrajaram2005@gmail.com"}]
+keywords = ["asyncio", "taskgroup", "structured-concurrency", "exceptiongroup", "concurrency"]
 
 [project.urls]
-"Bug Tracker" = "https://github.com/python/cpython/issues/101581"
+Homepage = "https://github.com/rahulrajaram/hulista"
+Repository = "https://github.com/rahulrajaram/hulista"
+"Bug Tracker" = "https://github.com/rahulrajaram/hulista/issues"
+Changelog = "https://github.com/rahulrajaram/hulista/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=9.0", "pytest-cov>=5.0", "pytest-benchmark>=5.0", "mypy>=1.19", "build>=1.3"]
