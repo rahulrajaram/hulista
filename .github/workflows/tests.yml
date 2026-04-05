@@ -37,7 +37,10 @@ jobs:
           allow-prereleases: ${{ matrix.allow-prereleases || false }}
 
       - name: Install test dependencies
-        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build pydantic
+        run: uv pip install --system pytest pytest-asyncio pytest-cov pytest-benchmark mypy build
+
+      - name: Install pydantic (optional, unavailable on some pre-release Pythons)
+        run: uv pip install --system pydantic || true
 
       - name: Unit tests — persistent-collections
         run: cd persistent-collections && python -m pytest tests/ -v

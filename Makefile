@@ -1,4 +1,4 @@
-PYTHON ?= /home/rahul/311/bin/python3
+PYTHON ?= python3
 ROOT := $(abspath .)
 PYTHONPATH := $(ROOT)/asyncio-actors:$(ROOT)/fp-combinators:$(ROOT)/live-dispatch:$(ROOT)/persistent-collections:$(ROOT)/sealed-typing:$(ROOT)/taskgroup-collect:$(ROOT)/with-update
 PACKAGE_TESTS := \

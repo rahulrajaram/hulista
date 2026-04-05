@@ -72,8 +72,8 @@ def test_call_logs_exceptions(bridge_and_loop, caplog):
 
     with caplog.at_level(logging.ERROR):
         bridge.call(boom)
-        import time
-        time.sleep(0.1)
+        # Deterministic sync: noop runs after boom's done-callback fires
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), loop).result(timeout=1.0)
 
     assert "PersistentBridge.call() task failed" in caplog.text
 
