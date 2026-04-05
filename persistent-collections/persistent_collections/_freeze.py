@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from typing import Any
+
 from persistent_collections.persistent_map import PersistentMap
 from persistent_collections.persistent_vector import PersistentVector
 
 
-def freeze(obj):
+def freeze(obj: Any) -> Any:
     """Recursively convert plain Python collections to persistent equivalents.
 
     - ``dict`` -> ``PersistentMap`` (keys preserved, values recursively frozen)
@@ -25,19 +27,19 @@ def freeze(obj):
     if isinstance(obj, PersistentVector):
         return obj  # already frozen
     if isinstance(obj, dict):
-        m = PersistentMap()
+        m: PersistentMap[Any, Any] = PersistentMap()
         for k, v in obj.items():
             m = m.set(k, freeze(v))
         return m
     if isinstance(obj, (list, tuple)):
-        v = PersistentVector()
+        vec: PersistentVector[Any] = PersistentVector()
         for item in obj:
-            v = v.append(freeze(item))
-        return v
+            vec = vec.append(freeze(item))
+        return vec
     return obj
 
 
-def thaw(obj):
+def thaw(obj: Any) -> Any:
     """Recursively convert persistent collections back to plain Python equivalents.
 
     - ``PersistentMap`` -> ``dict`` (values recursively thawed)
