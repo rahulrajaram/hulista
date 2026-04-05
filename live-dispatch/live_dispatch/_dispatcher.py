@@ -7,6 +7,18 @@ import typing
 from collections.abc import Callable
 from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
+from live_dispatch._combinations import (
+    CombinationTraceEntry,
+    _Advisor,
+    _run_combination_chain,
+    _run_combination_chain_async,
+)
+from live_dispatch._sealed_glue import (
+    _covered_types_for_param,
+    _find_sealed_bases,
+    _params_referencing_sealed,
+)
+
 _Args = tuple[Any, ...]
 _Kwargs = dict[str, Any]
 # A resolved type spec value is either a plain type or a tuple of types (for Union).
@@ -62,6 +74,10 @@ class Dispatcher:
         self._fallback: _HandlerFunc | None = None
         self._cache: dict[tuple[type[Any], ...], _Handler | None] = {}
         self._has_predicates = False
+        # Method combination advisors
+        self._before_advisors: list[_Advisor] = []
+        self._after_advisors: list[_Advisor] = []
+        self._around_advisors: list[_Advisor] = []
 
     def register(
         self,
@@ -174,19 +190,172 @@ class Dispatcher:
         self._fallback = func
         return func
 
+    # ------------------------------------------------------------------
+    # Method combination decorators
+    # ------------------------------------------------------------------
+
+    def before(
+        self, type_key: type[Any]
+    ) -> Callable[[_HandlerFunc], _HandlerFunc]:
+        """Register a :before advisor for *type_key*.
+
+        The advisor runs before the primary handler whenever the first
+        argument is an instance of *type_key*.  Its return value is
+        ignored.  Multiple :before advisors run in registration order.
+
+        Usage::
+
+            @dispatch.before(Task)
+            def log_start(task: Task) -> None:
+                print(f"Starting: {task}")
+        """
+        def decorator(fn: _HandlerFunc) -> _HandlerFunc:
+            self._before_advisors.append(_Advisor(func=fn, phase="before", type_key=type_key))
+            return fn
+        return decorator
+
+    def after(
+        self, type_key: type[Any]
+    ) -> Callable[[_HandlerFunc], _HandlerFunc]:
+        """Register an :after advisor for *type_key*.
+
+        The advisor runs after the primary handler returns.  Its return
+        value is ignored.  Multiple :after advisors run in *reverse*
+        registration order.
+
+        Usage::
+
+            @dispatch.after(Task)
+            def log_end(task: Task) -> None:
+                print(f"Done: {task}")
+        """
+        def decorator(fn: _HandlerFunc) -> _HandlerFunc:
+            self._after_advisors.append(_Advisor(func=fn, phase="after", type_key=type_key))
+            return fn
+        return decorator
+
+    def around(
+        self, type_key: type[Any]
+    ) -> Callable[[_HandlerFunc], _HandlerFunc]:
+        """Register an :around advisor for *type_key*.
+
+        The advisor wraps the entire execution chain.  It receives a
+        ``proceed`` callable as its first argument followed by the
+        original call arguments.  Calling ``proceed(*args, **kwargs)``
+        invokes the next :around advisor (or the before+primary+after
+        chain when all :around advisors have been entered).  The
+        outermost :around advisor is called first.
+
+        Usage::
+
+            @dispatch.around(Task)
+            def time_it(proceed, task: Task):
+                start = time.time()
+                result = proceed(task)
+                print(f"Took {time.time() - start}s")
+                return result
+        """
+        def decorator(fn: _HandlerFunc) -> _HandlerFunc:
+            self._around_advisors.append(_Advisor(func=fn, phase="around", type_key=type_key))
+            return fn
+        return decorator
+
+    # ------------------------------------------------------------------
+    # Internal helpers for combination dispatch
+    # ------------------------------------------------------------------
+
+    def _advisors_for(
+        self,
+        args: _Args,
+    ) -> tuple[list[_Advisor], list[_Advisor], list[_Advisor]]:
+        """Return (before, after, around) advisors applicable to *args*."""
+        if not args:
+            return [], [], []
+        first = args[0]
+        before = [a for a in self._before_advisors if isinstance(first, a.type_key)]
+        after  = [a for a in self._after_advisors  if isinstance(first, a.type_key)]
+        around = [a for a in self._around_advisors if isinstance(first, a.type_key)]
+        return before, after, around
+
+    def _has_advisors_for(self, args: _Args) -> bool:
+        """Return True when any advisor matches the call arguments."""
+        if not args:
+            return False
+        first = args[0]
+        return (
+            any(isinstance(first, a.type_key) for a in self._before_advisors)
+            or any(isinstance(first, a.type_key) for a in self._after_advisors)
+            or any(isinstance(first, a.type_key) for a in self._around_advisors)
+        )
+
+    # ------------------------------------------------------------------
+    # Dispatch entry points
+    # ------------------------------------------------------------------
+
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Dispatch to the best matching handler."""
         handler = self._find_handler(args, kwargs)
+        primary_func: _HandlerFunc | None = None
         if handler is not None:
-            return handler.func(*args, **kwargs)
+            primary_func = handler.func
+        elif self._fallback is not None:
+            primary_func = self._fallback
+        else:
+            raise TypeError(
+                f"No handler in dispatcher '{self._name}' matches "
+                f"arguments: {_format_args(args, kwargs)}"
+            )
 
-        if self._fallback is not None:
-            return self._fallback(*args, **kwargs)
+        if not self._has_advisors_for(args):
+            return primary_func(*args, **kwargs)
 
-        raise TypeError(
-            f"No handler in dispatcher '{self._name}' matches "
-            f"arguments: {_format_args(args, kwargs)}"
+        before, after, around = self._advisors_for(args)
+        return _run_combination_chain(
+            primary_func=primary_func,
+            before_advisors=before,
+            after_advisors=after,
+            around_advisors=around,
+            args=args,
+            kwargs=kwargs,
+            trace=None,
         )
+
+    def call_traced(
+        self, *args: Any, **kwargs: Any
+    ) -> tuple[Any, list[CombinationTraceEntry]]:
+        """Dispatch and return ``(result, trace)``.
+
+        *trace* is a list of :class:`CombinationTraceEntry` objects that
+        record the phase, function name, duration, and type key for each
+        advisor and the primary handler that fired during this call.
+
+        If no advisors are registered for the matched types the trace
+        will contain only the primary entry.
+        """
+        handler = self._find_handler(args, kwargs)
+        primary_func: _HandlerFunc | None = None
+        if handler is not None:
+            primary_func = handler.func
+        elif self._fallback is not None:
+            primary_func = self._fallback
+        else:
+            raise TypeError(
+                f"No handler in dispatcher '{self._name}' matches "
+                f"arguments: {_format_args(args, kwargs)}"
+            )
+
+        trace: list[CombinationTraceEntry] = []
+        before, after, around = self._advisors_for(args)
+        result = _run_combination_chain(
+            primary_func=primary_func,
+            before_advisors=before,
+            after_advisors=after,
+            around_advisors=around,
+            args=args,
+            kwargs=kwargs,
+            trace=trace,
+        )
+        return result, trace
 
     def handlers(self) -> list[dict[str, Any]]:
         """Introspect registered handlers."""
@@ -201,15 +370,21 @@ class Dispatcher:
         ]
 
     def unregister(self, func: _HandlerFunc) -> None:
-        """Remove a handler by function reference."""
+        """Remove a handler and any advisors registered from *func*."""
         self._handlers = [h for h in self._handlers if h.func is not func]
+        self._before_advisors = [a for a in self._before_advisors if a.func is not func]
+        self._after_advisors  = [a for a in self._after_advisors  if a.func is not func]
+        self._around_advisors = [a for a in self._around_advisors if a.func is not func]
         self._refresh_predicate_state()
         self._cache.clear()
 
     def clear(self) -> None:
-        """Remove all handlers."""
+        """Remove all handlers and advisors."""
         self._handlers.clear()
         self._fallback = None
+        self._before_advisors.clear()
+        self._after_advisors.clear()
+        self._around_advisors.clear()
         self._refresh_predicate_state()
         self._cache.clear()
 
@@ -301,46 +476,108 @@ class Dispatcher:
     async def call_async(self, *args: Any, **kwargs: Any) -> Any:
         """Async dispatch — calls the handler and awaits if it returns a coroutine."""
         handler = self._find_handler(args, kwargs)
+        primary_func: _HandlerFunc | None = None
         if handler is not None:
-            result = handler.func(*args, **kwargs)
+            primary_func = handler.func
+        elif self._fallback is not None:
+            primary_func = self._fallback
+        else:
+            raise TypeError(
+                f"No handler in dispatcher '{self._name}' matches "
+                f"arguments: {_format_args(args, kwargs)}"
+            )
+
+        if not self._has_advisors_for(args):
+            result = primary_func(*args, **kwargs)
             if inspect.isawaitable(result):
                 return await result
             return result
 
-        if self._fallback is not None:
-            result = self._fallback(*args, **kwargs)
-            if inspect.isawaitable(result):
-                return await result
-            return result
-
-        raise TypeError(
-            f"No handler in dispatcher '{self._name}' matches "
-            f"arguments: {_format_args(args, kwargs)}"
+        before, after, around = self._advisors_for(args)
+        return await _run_combination_chain_async(
+            primary_func=primary_func,
+            before_advisors=before,
+            after_advisors=after,
+            around_advisors=around,
+            args=args,
+            kwargs=kwargs,
+            trace=None,
         )
 
-    def verify_exhaustive(self, sealed_base: type[Any]) -> None:
+    async def call_async_traced(
+        self, *args: Any, **kwargs: Any
+    ) -> tuple[Any, list[CombinationTraceEntry]]:
+        """Async dispatch returning ``(result, trace)``.
+
+        Like :meth:`call_traced` but for async handlers and advisors.
+        """
+        handler = self._find_handler(args, kwargs)
+        primary_func: _HandlerFunc | None = None
+        if handler is not None:
+            primary_func = handler.func
+        elif self._fallback is not None:
+            primary_func = self._fallback
+        else:
+            raise TypeError(
+                f"No handler in dispatcher '{self._name}' matches "
+                f"arguments: {_format_args(args, kwargs)}"
+            )
+
+        trace: list[CombinationTraceEntry] = []
+        before, after, around = self._advisors_for(args)
+        result = await _run_combination_chain_async(
+            primary_func=primary_func,
+            before_advisors=before,
+            after_advisors=after,
+            around_advisors=around,
+            args=args,
+            kwargs=kwargs,
+            trace=trace,
+        )
+        return result, trace
+
+    # ------------------------------------------------------------------
+    # Sealed-type exhaustiveness verification
+    # ------------------------------------------------------------------
+
+    def verify_exhaustive(
+        self,
+        sealed_base: type[Any],
+        *,
+        param: str | None = None,
+    ) -> None:
         """Assert that registered handlers cover all sealed subclasses.
 
         Args:
             sealed_base: A class decorated with @sealed from sealed_typing.
+            param: Optional parameter name.  When given, only handlers that
+                   annotate *param* are considered; coverage is checked
+                   per that parameter.  When omitted, all typed parameters
+                   across all handlers are searched (original behaviour).
 
         Raises:
-            TypeError: If the sealed base has subclasses not covered by handlers,
-                       or if sealed_base is not a sealed class.
+            TypeError: If the sealed base has subclasses not covered by
+                       handlers, or if sealed_base is not a sealed class.
         """
         if not getattr(sealed_base, '__sealed__', False):
             raise TypeError(f"'{sealed_base.__qualname__}' is not a sealed class")
 
         sealed_subs = frozenset(getattr(sealed_base, '__sealed_subclasses__', set()))
-        covered_types: set[type[Any]] = set()
-        for h in self._handlers:
-            for resolved in h.type_spec.values():
-                if isinstance(resolved, tuple):
-                    for t in resolved:
-                        if isinstance(t, type):
-                            covered_types.add(t)
-                elif isinstance(resolved, type):
-                    covered_types.add(resolved)
+
+        if param is not None:
+            # Per-parameter coverage check.
+            covered_types: set[type[Any]] = _covered_types_for_param(self._handlers, param)
+        else:
+            # Original behaviour: collect types from ALL parameters.
+            covered_types = set()
+            for h in self._handlers:
+                for resolved in h.type_spec.values():
+                    if isinstance(resolved, tuple):
+                        for t in resolved:
+                            if isinstance(t, type):
+                                covered_types.add(t)
+                    elif isinstance(resolved, type):
+                        covered_types.add(resolved)
 
         missing = sealed_subs - covered_types
         if missing:
@@ -350,6 +587,56 @@ class Dispatcher:
                 f"sealed class '{sealed_base.__qualname__}'. "
                 f"Missing: {missing_names}"
             )
+
+    def verify_exhaustive_for(self, sealed_base: type[Any]) -> None:
+        """Check ALL typed parameters that reference *sealed_base*.
+
+        Finds every parameter name across all handlers whose type annotation
+        includes *sealed_base* or any of its registered subclasses, then
+        verifies that for each such parameter name, every sealed subclass is
+        covered by at least one handler annotating that same parameter.
+
+        Args:
+            sealed_base: A class decorated with @sealed from sealed_typing.
+
+        Raises:
+            TypeError: If sealed_base is not a sealed class, or if any
+                       parameter that references the sealed hierarchy does not
+                       fully cover all subclasses.
+        """
+        if not getattr(sealed_base, '__sealed__', False):
+            raise TypeError(f"'{sealed_base.__qualname__}' is not a sealed class")
+
+        param_names = _params_referencing_sealed(self._handlers, sealed_base)
+        if not param_names:
+            return
+
+        sealed_subs = frozenset(getattr(sealed_base, '__sealed_subclasses__', set()))
+        for pname in sorted(param_names):
+            covered = _covered_types_for_param(self._handlers, pname)
+            missing = sealed_subs - covered
+            if missing:
+                missing_names = ', '.join(sorted(c.__qualname__ for c in missing))
+                raise TypeError(
+                    f"Dispatcher '{self._name}' parameter '{pname}' does not cover "
+                    f"all subclasses of sealed class '{sealed_base.__qualname__}'. "
+                    f"Missing: {missing_names}"
+                )
+
+    def verify_all_sealed(self) -> None:
+        """Auto-discover all sealed types in handlers and verify each one.
+
+        Scans every handler's type_spec for types whose ancestors are sealed
+        classes, then calls :meth:`verify_exhaustive_for` for each discovered
+        sealed base.
+
+        Raises:
+            TypeError: If any sealed type is not fully covered for every
+                       parameter that references it.
+        """
+        sealed_bases = _find_sealed_bases(self._handlers)
+        for base in sorted(sealed_bases, key=lambda c: c.__qualname__):
+            self.verify_exhaustive_for(base)
 
     def __repr__(self) -> str:
         return f"Dispatcher('{self._name}', handlers={len(self._handlers)})"

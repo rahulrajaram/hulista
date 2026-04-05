@@ -381,3 +381,168 @@ class TestFullPipeline:
             assert state["a"] == 4   # 1 + 3
             assert state["b"] == 6   # 2 + 4
             assert summary == "a=4, b=6"
+
+
+# ---------------------------------------------------------------------------
+# 7. Method combinations + sealed exhaustiveness
+#    CLOS-inspired before/after/around with traced execution and
+#    sealed-type dispatch verification.
+# ---------------------------------------------------------------------------
+
+class TestMethodCombinationsIntegration:
+    """Method combinations compose with sealed types, tracing, and async."""
+
+    def test_before_after_around_with_sealed_dispatch(self):
+        from sealed_typing import sealed
+        from live_dispatch import Dispatcher
+
+        @sealed
+        class Action:
+            pass
+
+        class Build(Action):
+            pass
+
+        class Deploy(Action):
+            pass
+
+        dispatch = Dispatcher("actions")
+        log: list[str] = []
+
+        @dispatch.register
+        def on_build(a: Build) -> str:
+            log.append("primary:build")
+            return "built"
+
+        @dispatch.register
+        def on_deploy(a: Deploy) -> str:
+            log.append("primary:deploy")
+            return "deployed"
+
+        @dispatch.before(Action)
+        def before_action(a: Action) -> None:
+            log.append(f"before:{type(a).__name__}")
+
+        @dispatch.after(Action)
+        def after_action(a: Action) -> None:
+            log.append(f"after:{type(a).__name__}")
+
+        result = dispatch(Build())
+        assert result == "built"
+        assert log == ["before:Build", "primary:build", "after:Build"]
+
+        log.clear()
+        result = dispatch(Deploy())
+        assert result == "deployed"
+        assert log == ["before:Deploy", "primary:deploy", "after:Deploy"]
+
+    def test_traced_dispatch_with_sealed_types(self):
+        from sealed_typing import sealed
+        from live_dispatch import Dispatcher
+
+        @sealed
+        class Shape:
+            pass
+
+        class Circle(Shape):
+            pass
+
+        class Square(Shape):
+            pass
+
+        dispatch = Dispatcher("shapes")
+
+        @dispatch.register
+        def on_circle(s: Circle) -> str:
+            return "circle"
+
+        @dispatch.register
+        def on_square(s: Square) -> str:
+            return "square"
+
+        @dispatch.before(Shape)
+        def pre(s: Shape) -> None:
+            pass
+
+        result, trace = dispatch.call_traced(Circle())
+        assert result == "circle"
+        phases = [e.phase for e in trace]
+        assert "before" in phases
+        assert "primary" in phases
+
+    def test_verify_all_sealed_after_full_registration(self):
+        from sealed_typing import sealed, verify_dispatch_exhaustive
+        from live_dispatch import Dispatcher
+
+        @sealed
+        class Msg:
+            pass
+
+        class Ping(Msg):
+            pass
+
+        class Pong(Msg):
+            pass
+
+        dispatch = Dispatcher("msgs")
+
+        @dispatch.register
+        def on_ping(m: Ping) -> str:
+            return "ping"
+
+        @dispatch.register
+        def on_pong(m: Pong) -> str:
+            return "pong"
+
+        # Both verification paths should pass
+        dispatch.verify_exhaustive(Msg)
+        dispatch.verify_exhaustive_for(Msg)
+        dispatch.verify_all_sealed()
+        verify_dispatch_exhaustive(dispatch, Msg)
+
+    def test_around_advisor_modifies_return(self):
+        from live_dispatch import Dispatcher
+
+        dispatch = Dispatcher("wrap")
+
+        class Item:
+            def __init__(self, val: int):
+                self.val = val
+
+        @dispatch.register
+        def handle(item: Item) -> int:
+            return item.val
+
+        @dispatch.around(Item)
+        def double_result(proceed, item: Item) -> int:
+            return proceed(item) * 2
+
+        assert dispatch(Item(5)) == 10
+
+    @pytest.mark.asyncio
+    async def test_async_combinations(self):
+        from live_dispatch import Dispatcher
+
+        dispatch = Dispatcher("async_combo")
+        log: list[str] = []
+
+        class Request:
+            def __init__(self, path: str):
+                self.path = path
+
+        @dispatch.register
+        async def handle(r: Request) -> str:
+            log.append("primary")
+            return f"ok:{r.path}"
+
+        @dispatch.before(Request)
+        async def auth(r: Request) -> None:
+            log.append("auth")
+
+        @dispatch.after(Request)
+        async def audit(r: Request) -> None:
+            log.append("audit")
+
+        result = await dispatch.call_async(Request("/api"))
+        assert result == "ok:/api"
+        assert log == ["auth", "primary", "audit"]

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.1 - 2026-04-05
+
+### Added
+
+- `fp-combinators`: `async_sequence`, `async_traverse`, and `async_traverse_all` — sequential async Result helpers for ordered validation chains and async batch processing.
+- `taskgroup-collect`: `collect_results()` convenience wrapper for concurrent fan-out, plus `outcome_to_result()`, `result_to_outcome()`, and `outcomes_to_results()` TaskOutcome↔Result adapters bridging taskgroup-collect and fp-combinators.
+- `persistent-collections`: `freeze()` and `thaw()` recursive converters between plain Python dicts/lists and PersistentMap/PersistentVector, enabling gradual migration of mutable data structures.
+- `live-dispatch`: CLOS-inspired method combinations (`:before`, `:after`, `:around`) with traced execution support, plus strengthened sealed-type exhaustiveness verification with per-parameter and auto-discovery modes.
+- `sealed-typing`: `verify_dispatch_exhaustive()` convenience function for verifying live-dispatch handler coverage of sealed hierarchies.
+
 ## 0.1.0 - 2026-04-05
 
 Initial monorepo release for the hulista package family.

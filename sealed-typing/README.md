@@ -47,6 +47,7 @@ def area(shape: Shape) -> float:
 | `is_sealed(cls)` | `(type) -> bool` | Check if a class is sealed |
 | `sealed_subclasses(cls)` | `(type) -> frozenset[type]` | Return all registered subclasses |
 | `assert_exhaustive(value, *handlers)` | `(Any, *type) -> None` | Raise `TypeError` if the provided handler classes do not cover the known sealed descendants |
+| `verify_dispatch_exhaustive(dispatcher, sealed_base)` | `(Any, type) -> None` | Verify a live-dispatch `Dispatcher` covers all sealed subclasses (requires live-dispatch) |
 
 ### How `@sealed` works
 
