@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fp-combinators"
-version = "0.1.1"
+version = "0.1.0"
 description = "Lightweight functional programming combinators: pipe, compose, first_some"
 readme = "README.md"
 requires-python = ">=3.10"

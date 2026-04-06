@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "live-dispatch"
-version = "0.1.1"
+version = "0.1.0"
 description = "Runtime-extensible dispatch with multiple dispatch, predicate dispatch, and versioning"
 readme = "README.md"
 requires-python = ">=3.10"

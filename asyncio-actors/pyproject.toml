@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asyncio-actors"
-version = "0.1.1"
+version = "0.1.0"
 description = "OTP-inspired actor primitives for Python's asyncio with supervision trees, bounded inboxes, and async-sync bridge"
 readme = "README.md"
 license = "MIT"

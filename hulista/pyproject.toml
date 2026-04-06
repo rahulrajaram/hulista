@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hulista"
-version = "0.1.1"
+version = "0.1.0"
 description = "Functional, immutable, concurrent Python — all batteries included"
 readme = "README.md"
 license = "MIT"
@@ -22,13 +22,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "asyncio-actors>=0.1.1",
-    "fp-combinators>=0.1.1",
-    "live-dispatch>=0.1.1",
-    "persistent-collections>=0.1.1",
-    "sealed-typing>=0.1.1",
-    "taskgroup-collect>=0.1.1",
-    "with-update>=0.1.1",
+    "asyncio-actors>=0.1.0",
+    "fp-combinators>=0.1.0",
+    "live-dispatch>=0.1.0",
+    "persistent-collections>=0.1.0",
+    "sealed-typing>=0.1.0",
+    "taskgroup-collect>=0.1.0",
+    "with-update>=0.1.0",
 ]
 
 [project.urls]
