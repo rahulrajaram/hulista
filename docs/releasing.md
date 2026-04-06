@@ -15,11 +15,11 @@ make docs-build
 
 ## Package publishing
 
-The PyPI workflow publishes every package in the monorepo, including `hulista`.
+The PyPI workflow publishes the `hulista` distribution only.
 
 Important implication:
 
-- A release tag is a coordinated monorepo release, not a one-package release.
+- A release tag publishes the bundled `hulista` wheel, which contains the toolkit modules from this monorepo.
 
 ## Recommended release flow
 

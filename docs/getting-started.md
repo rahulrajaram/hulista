@@ -8,10 +8,11 @@ Use the umbrella package when you want the full stack:
 pip install hulista
 ```
 
-Use individual packages when you only need a subset:
+The single public distribution still exposes focused module imports when you only need a subset:
 
-```bash
-pip install persistent-collections live-dispatch
+```python
+from persistent_collections import PersistentMap
+from live_dispatch import Dispatcher
 ```
 
 ## What `hulista` re-exports
@@ -44,15 +45,15 @@ value = hulista.pipe(
 assert value == 20
 ```
 
-## When to pick individual packages
+## When to use focused imports
 
-Choose a focused package instead of `hulista` if:
+Choose focused imports instead of the `hulista` namespace if:
 
-- your library only needs one concept and you want minimal dependency surface
-- you need Python 3.10 support for a package that does not require 3.11
+- your library only uses one concept and you want your imports to stay explicit
+- you prefer importing `persistent_collections`, `live_dispatch`, or `with_update` directly in application code
 - you want to keep your public API explicit about which hulista primitive you depend on
 
-The umbrella package itself requires Python 3.11 because some bundled packages do.
+The `hulista` distribution itself requires Python 3.11 because some bundled modules do.
 
 ## Local docs workflow
 

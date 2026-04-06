@@ -2,7 +2,7 @@
 
 Functional, immutable, concurrent Python — all batteries included.
 
-`hulista` is the umbrella package for the full hulista toolkit. One install gives you immutable data structures, sealed typing, runtime dispatch, actor-style concurrency, collect-all task groups, functional combinators, and record-update ergonomics.
+`hulista` is the single published distribution for the full hulista toolkit. One install gives you immutable data structures, sealed typing, runtime dispatch, actor-style concurrency, collect-all task groups, functional combinators, and record-update ergonomics.
 
 Documentation: <https://rahulrajaram.github.io/hulista/>
 
@@ -12,9 +12,9 @@ Install `hulista` when you want a coherent batteries-included stack instead of p
 
 - event-driven or agent-style systems that combine immutable state with async orchestration
 - teams that want one dependency and one docs entry point
-- experimentation across the full package family before narrowing to individual packages
+- experimentation across the full package family before narrowing to individual imports
 
-This meta-package installs all seven hulista libraries in one go:
+The `hulista` wheel bundles the toolkit's runtime modules directly:
 
 | Package | Import | Description |
 |---|---|---|
@@ -34,10 +34,11 @@ Install the full toolkit:
 pip install hulista
 ```
 
-Or install a single building block, for example:
+The bundled modules remain importable directly if you prefer focused imports:
 
-```bash
-pip install persistent-collections
+```python
+from persistent_collections import PersistentMap
+from fp_combinators import pipe
 ```
 
 ## Quick start
@@ -77,7 +78,7 @@ subs = hulista.sealed_subclasses(Event)  # {Click, KeyPress}
 
 ## Source layout
 
-Each package lives in the monorepo with its own README, tests, and PyPI distribution:
+Each package lives in the monorepo with its own README and tests, but the public PyPI release is `hulista`:
 
 - [`asyncio-actors/`](https://github.com/rahulrajaram/hulista/tree/master/asyncio-actors)
 - [`fp-combinators/`](https://github.com/rahulrajaram/hulista/tree/master/fp-combinators)

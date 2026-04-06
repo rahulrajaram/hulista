@@ -24,31 +24,11 @@ permissions:
 
 jobs:
   publish:
-    name: Publish ${{ matrix.project }} to ${{ github.event_name == 'workflow_dispatch' && inputs.repository || 'pypi' }}
+    name: Publish hulista to ${{ github.event_name == 'workflow_dispatch' && inputs.repository || 'pypi' }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - package-dir: asyncio-actors
-            project: asyncio-actors
-          - package-dir: fp-combinators
-            project: fp-combinators
-          - package-dir: live-dispatch
-            project: live-dispatch
-          - package-dir: persistent-collections
-            project: persistent-collections
-          - package-dir: sealed-typing
-            project: sealed-typing
-          - package-dir: taskgroup-collect
-            project: taskgroup-collect
-          - package-dir: with-update
-            project: with-update
-          - package-dir: hulista
-            project: hulista
     environment:
       name: ${{ github.event_name == 'workflow_dispatch' && inputs.repository || 'pypi' }}
-      url: ${{ (github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi') && format('https://test.pypi.org/project/{0}/', matrix.project) || format('https://pypi.org/project/{0}/', matrix.project) }}
+      url: ${{ (github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi') && 'https://test.pypi.org/project/hulista/' || 'https://pypi.org/project/hulista/' }}
     permissions:
       contents: read
       id-token: write
@@ -70,20 +50,20 @@ jobs:
         run: uv pip install --system --upgrade build twine pkginfo
 
       - name: Build distributions
-        run: cd ${{ matrix.package-dir }} && python -m build .
+        run: python scripts/build_hulista_dist.py
 
       - name: Verify distribution metadata
-        run: python -m twine check ${{ matrix.package-dir }}/dist/*
+        run: python -m twine check hulista/dist/*
 
       - name: Publish package distributions to PyPI
         if: github.event_name != 'workflow_dispatch' || inputs.repository == 'pypi'
         uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
-          packages-dir: ${{ matrix.package-dir }}/dist
+          packages-dir: hulista/dist
 
       - name: Publish package distributions to TestPyPI
         if: github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi'
         uses: pypa/gh-action-pypi-publish@v1.13.0
         with:
-          packages-dir: ${{ matrix.package-dir }}/dist
+          packages-dir: hulista/dist
           repository-url: https://test.pypi.org/legacy/

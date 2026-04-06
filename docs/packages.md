@@ -102,6 +102,6 @@ Key APIs:
 - `with_update()`
 - `|`
 
-## Choosing the umbrella package
+## Choosing hulista
 
-Install `hulista` when you want one dependency and one docs entry point. Install individual packages when you want finer Python-version control or a narrower transitive dependency surface.
+Install `hulista` when you want one dependency and one docs entry point. The bundled modules are still importable directly, but the public PyPI package is `hulista`.
