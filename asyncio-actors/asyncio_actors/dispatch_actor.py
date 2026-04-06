@@ -12,7 +12,7 @@ from typing import Any, Callable, ClassVar
 
 from asyncio_actors.actor import Actor
 
-_UNRESOLVED = object()
+_UNRESOLVED: object = object()
 
 
 def _make_dispatcher(name: str) -> Any:
@@ -129,17 +129,18 @@ def _resolve_annotation_node(
         args = _resolve_annotation_subscript_args(node.slice, globalns, localns)
         if args is _UNRESOLVED:
             return _UNRESOLVED
+        resolved_args = typing.cast(tuple[Any, ...], args)
         if base is typing.Union:
             try:
-                result = args[0]
-                for part in args[1:]:
+                result = resolved_args[0]
+                for part in resolved_args[1:]:
                     result = result | part
                 return result
             except TypeError:
                 return _UNRESOLVED
-        if base is typing.Optional and len(args) == 1:
+        if base is typing.Optional and len(resolved_args) == 1:
             try:
-                return args[0] | type(None)
+                return resolved_args[0] | type(None)
             except TypeError:
                 return _UNRESOLVED
         return _UNRESOLVED
@@ -151,7 +152,7 @@ def _resolve_annotation_subscript_args(
     node: ast.AST,
     globalns: dict[str, Any],
     localns: dict[str, Any],
-) -> tuple[Any, ...] | object:
+) -> Any:
     if isinstance(node, ast.Tuple):
         resolved = tuple(
             _resolve_annotation_node(item, globalns, localns)
