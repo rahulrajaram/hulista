@@ -73,7 +73,7 @@ The production path is tag-driven. Pushing a tag that matches `v*` will publish 
 Recommended sequence:
 
 1. Merge the release commit to `master`.
-2. Create an annotated tag such as `v0.1.1`.
+2. Create an annotated tag such as `v0.1.0`.
 3. Push the tag.
 4. Watch [`.github/workflows/publish.yml`](.github/workflows/publish.yml) complete for every package.
 5. Verify the live pages on PyPI and the docs site.

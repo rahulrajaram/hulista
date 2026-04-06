@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
-## 0.1.1 - 2026-04-05
+## 0.1.0 - 2026-04-05
+
+Initial monorepo release for the hulista package family.
 
 ### Added
 
@@ -11,13 +13,6 @@ All notable changes to this project will be documented in this file.
 - `persistent-collections`: `freeze()` and `thaw()` recursive converters between plain Python dicts/lists and PersistentMap/PersistentVector, enabling gradual migration of mutable data structures.
 - `live-dispatch`: CLOS-inspired method combinations (`:before`, `:after`, `:around`) with traced execution support, plus strengthened sealed-type exhaustiveness verification with per-parameter and auto-discovery modes.
 - `sealed-typing`: `verify_dispatch_exhaustive()` convenience function for verifying live-dispatch handler coverage of sealed hierarchies.
-
-## 0.1.0 - 2026-04-05
-
-Initial monorepo release for the hulista package family.
-
-### Added
-
 - `persistent-collections`: `PersistentMap` and `PersistentVector` with structural sharing, transient builders, structural diffing, and hashable immutable collections.
 - `sealed-typing`: `@sealed`, sealed subclass tracking, and runtime exhaustiveness helpers for `match`/`case` workflows.
 - `asyncio-actors`: OTP-inspired actor primitives with bounded inboxes, supervision trees, selective receive, circuit breakers, and async-sync bridge support.
