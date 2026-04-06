@@ -25,6 +25,7 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/rahulrajaram/hulista"
+Documentation = "https://rahulrajaram.github.io/hulista/"
 Repository = "https://github.com/rahulrajaram/hulista"
 "Bug Tracker" = "https://github.com/rahulrajaram/hulista/issues"
 Changelog = "https://github.com/rahulrajaram/hulista/blob/master/CHANGELOG.md"

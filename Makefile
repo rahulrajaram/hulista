@@ -21,10 +21,19 @@ BUILD_PACKAGES := \
 	taskgroup-collect \
 	with-update \
 	hulista
+SECURITY_SOURCE_DIRS := \
+	asyncio-actors/asyncio_actors \
+	fp-combinators/fp_combinators \
+	hulista/hulista \
+	live-dispatch/live_dispatch \
+	persistent-collections/persistent_collections \
+	sealed-typing/sealed_typing \
+	taskgroup-collect/taskgroup_collect \
+	with-update/with_update
 PYTEST_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning
 BUILD_DEPRECATION_FLAGS := -W error::DeprecationWarning -W error::PendingDeprecationWarning -W error::UserWarning:setuptools
 
-.PHONY: test coverage typecheck bench build deprecationcheck
+.PHONY: test coverage typecheck bench build deprecationcheck security docs-build docs-serve
 
 test:
 	PYTHONPATH="$(PYTHONPATH)" $(PYTHON) -m pytest -p no:pytest_monitor $(PACKAGE_TESTS) -q
@@ -53,3 +62,16 @@ deprecationcheck:
 	for pkg in $(BUILD_PACKAGES); do \
 		(cd $$pkg && $(PYTHON) $(BUILD_DEPRECATION_FLAGS) -m build .); \
 	done
+
+security:
+	$(PYTHON) -m bandit -q -r $(SECURITY_SOURCE_DIRS)
+	tmpfile="$$(mktemp)"; \
+	$(PYTHON) scripts/write_security_requirements.py "$$tmpfile"; \
+	$(PYTHON) -m pip_audit -r "$$tmpfile"; \
+	rm -f "$$tmpfile"
+
+docs-build:
+	$(PYTHON) -m mkdocs build --strict
+
+docs-serve:
+	$(PYTHON) -m mkdocs serve

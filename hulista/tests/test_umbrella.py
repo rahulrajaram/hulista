@@ -8,7 +8,8 @@ Verifies:
 """
 from __future__ import annotations
 
-import asyncio
+from pathlib import Path
+import tomllib
 import pytest
 
 import hulista
@@ -20,8 +21,10 @@ import hulista
 
 
 def test_version_exists() -> None:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    project_version = tomllib.loads(pyproject.read_text())["project"]["version"]
     assert hasattr(hulista, "__version__")
-    assert hulista.__version__ == "0.1.0"
+    assert hulista.__version__ == project_version
 
 
 # ---------------------------------------------------------------------------

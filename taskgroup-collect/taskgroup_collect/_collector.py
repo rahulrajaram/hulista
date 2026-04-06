@@ -144,7 +144,8 @@ class CollectorTaskGroup:
                     self._abort()
             self._on_completed_fut = None
 
-        assert not self._tasks
+        if self._tasks:
+            raise RuntimeError("CollectorTaskGroup failed to drain all tasks before exit")
 
         # Build the outcomes list in creation order before clearing state.
         self._outcomes_result = []

@@ -2,6 +2,8 @@
 
 Functional programming and structured-concurrency building blocks for Python, born from real friction points in production agent orchestration.
 
+Public docs: <https://rahulrajaram.github.io/hulista/>
+
 ## Packages
 
 | Package | Description | Python |
@@ -215,7 +217,17 @@ make typecheck
 # Run warnings-as-errors and packaging checks
 make deprecationcheck
 make build
+
+# Build or preview the public docs site
+python -m pip install -r docs/requirements.txt
+make docs-build
 ```
+
+## Release
+
+- Public docs are built from [`docs/`](docs/) with MkDocs and deployed by [`.github/workflows/docs.yml`](.github/workflows/docs.yml).
+- PyPI publishing is driven by [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+- The release checklist lives in [`RELEASING.md`](RELEASING.md).
 
 ## License
 
