@@ -1,0 +1,50 @@
+site_name: hulista
+site_description: Functional programming and structured-concurrency building blocks for Python
+site_url: https://rahulrajaram.github.io/hulista/
+repo_url: https://github.com/rahulrajaram/hulista
+repo_name: rahulrajaram/hulista
+edit_uri: edit/master/docs/
+strict: true
+
+theme:
+  name: material
+  logo: null
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  palette:
+    scheme: default
+    primary: teal
+    accent: amber
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Package Guide: packages.md
+  - Releasing: releasing.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+
+extra_css:
+  - stylesheets/extra.css

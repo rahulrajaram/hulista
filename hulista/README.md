@@ -2,7 +2,19 @@
 
 Functional, immutable, concurrent Python — all batteries included.
 
-This is the umbrella meta-package that installs all seven hulista libraries in one go:
+`hulista` is the umbrella package for the full hulista toolkit. One install gives you immutable data structures, sealed typing, runtime dispatch, actor-style concurrency, collect-all task groups, functional combinators, and record-update ergonomics.
+
+Documentation: <https://rahulrajaram.github.io/hulista/>
+
+## Why install the umbrella package?
+
+Install `hulista` when you want a coherent batteries-included stack instead of picking packages one by one. It is especially useful for:
+
+- event-driven or agent-style systems that combine immutable state with async orchestration
+- teams that want one dependency and one docs entry point
+- experimentation across the full package family before narrowing to individual packages
+
+This meta-package installs all seven hulista libraries in one go:
 
 | Package | Import | Description |
 |---|---|---|
@@ -16,8 +28,16 @@ This is the umbrella meta-package that installs all seven hulista libraries in o
 
 ## Install
 
-```
+Install the full toolkit:
+
+```bash
 pip install hulista
+```
+
+Or install a single building block, for example:
+
+```bash
+pip install persistent-collections
 ```
 
 ## Quick start
@@ -44,5 +64,27 @@ class KeyPress(Event): pass
 
 subs = hulista.sealed_subclasses(Event)  # {Click, KeyPress}
 ```
+
+## What you get
+
+- `PersistentMap` / `PersistentVector` for immutable application state with structural sharing
+- `pipe`, `async_pipe`, `Ok`, and `Err` for dataflow and typed error handling
+- `ActorSystem` for supervised async workers and message passing
+- `Dispatcher` for runtime-extensible type or predicate dispatch
+- `sealed` for exhaustiveness-friendly closed hierarchies
+- `CollectorTaskGroup` for collect-all structured concurrency
+- `updatable` and `with_update` for record-update syntax on frozen models
+
+## Source layout
+
+Each package lives in the monorepo with its own README, tests, and PyPI distribution:
+
+- [`asyncio-actors/`](https://github.com/rahulrajaram/hulista/tree/master/asyncio-actors)
+- [`fp-combinators/`](https://github.com/rahulrajaram/hulista/tree/master/fp-combinators)
+- [`live-dispatch/`](https://github.com/rahulrajaram/hulista/tree/master/live-dispatch)
+- [`persistent-collections/`](https://github.com/rahulrajaram/hulista/tree/master/persistent-collections)
+- [`sealed-typing/`](https://github.com/rahulrajaram/hulista/tree/master/sealed-typing)
+- [`taskgroup-collect/`](https://github.com/rahulrajaram/hulista/tree/master/taskgroup-collect)
+- [`with-update/`](https://github.com/rahulrajaram/hulista/tree/master/with-update)
 
 ## Requires Python 3.11+

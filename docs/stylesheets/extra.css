@@ -1,0 +1,56 @@
+.hero {
+  padding: 1.5rem 0 2rem;
+}
+
+.hero-kicker {
+  margin: 0;
+  color: var(--md-primary-fg-color);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0.4rem 0 0.8rem;
+  max-width: 14ch;
+  line-height: 1.05;
+}
+
+.hero-copy {
+  max-width: 52rem;
+  font-size: 1.05rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  margin-top: 1.2rem;
+}
+
+.package-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.package-card {
+  display: block;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--md-default-fg-color) 14%, transparent);
+  border-radius: 0.8rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--md-primary-fg-color) 10%, white), transparent 55%),
+    var(--md-default-bg-color);
+  text-decoration: none;
+}
+
+.package-card strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.package-card span {
+  color: var(--md-default-fg-color--light);
+}

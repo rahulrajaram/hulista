@@ -2,9 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
-import types
-import unittest.mock
 import pytest
 
 from asyncio_actors.dispatch_actor import DispatchActor
@@ -217,6 +214,39 @@ async def test_default_on_unhandled_raises_type_error():
         ref = await system.spawn(StrictActor)
         with pytest.raises(TypeError):
             await ref.ask(Unknown())
+
+
+@pytest.mark.asyncio
+async def test_local_scope_annotations_resolve_without_eval():
+    class LocalMsg:
+        def __init__(self, value: str) -> None:
+            self.value = value
+
+    class LocalActor(DispatchActor):
+        @DispatchActor.handle
+        async def on_local(self, msg: LocalMsg) -> str:
+            return msg.value.upper()
+
+    async with ActorSystem() as system:
+        ref = await system.spawn(LocalActor)
+        assert await ref.ask(LocalMsg("ok")) == "OK"
+
+
+def test_unsafe_annotation_expression_is_not_executed(monkeypatch):
+    from asyncio_actors.dispatch_actor import _UNRESOLVED, _resolve_string_annotation
+    import os
+
+    calls: list[str] = []
+
+    def fake_system(command: str) -> int:
+        calls.append(command)
+        return 0
+
+    monkeypatch.setattr(os, "system", fake_system)
+
+    resolved = _resolve_string_annotation("os.system('echo bandit')", {"os": os}, {})
+    assert resolved is _UNRESOLVED
+    assert calls == []
 
 
 # ===========================================================================

@@ -4,12 +4,15 @@
 # them to wrappers) so that Dispatcher.register() can call get_type_hints()
 # correctly.
 
+import ast
 import inspect
 import sys
 import typing
 from typing import Any, Callable, ClassVar
 
 from asyncio_actors.actor import Actor
+
+_UNRESOLVED = object()
 
 
 def _make_dispatcher(name: str) -> Any:
@@ -54,22 +57,131 @@ def _resolve_annotations_at_decoration(fn: Callable[..., Any]) -> dict[str, Any]
         hints = typing.get_type_hints(fn, globalns=merged_globals, localns=localns)
     except (NameError, AttributeError, TypeError):
         # Fall back: use the raw annotation dict (values may be strings).
-        # We'll convert them best-effort.
+        # Resolve only a narrow safe subset instead of executing annotation
+        # expressions. Dispatch handlers only need runtime type objects.
         hints = {}
         raw = getattr(fn, "__annotations__", {})
         for k, v in raw.items():
             if k == "return":
                 continue
             if isinstance(v, str):
-                try:
-                    hints[k] = eval(v, merged_globals, localns)  # noqa: S307
-                except Exception:
-                    pass  # annotation stays unresolved; skip this param
+                resolved = _resolve_string_annotation(v, merged_globals, localns)
+                if resolved is not _UNRESOLVED:
+                    hints[k] = resolved
             else:
                 hints[k] = v
         return hints
 
     return {k: v for k, v in hints.items() if k != "return"}
+
+
+def _resolve_string_annotation(
+    annotation: str,
+    globalns: dict[str, Any],
+    localns: dict[str, Any],
+) -> Any:
+    """Resolve a safe subset of string annotations without using eval().
+
+    Supported forms:
+    - ``Name``
+    - dotted attribute chains such as ``module.Type`` or ``Outer.Inner``
+    - ``A | B`` unions
+    - ``typing.Union[A, B]`` and ``typing.Optional[A]``
+    """
+    try:
+        node = ast.parse(annotation, mode="eval").body
+    except SyntaxError:
+        return _UNRESOLVED
+    return _resolve_annotation_node(node, globalns, localns)
+
+
+def _resolve_annotation_node(
+    node: ast.AST,
+    globalns: dict[str, Any],
+    localns: dict[str, Any],
+) -> Any:
+    if isinstance(node, ast.Name):
+        return _lookup_annotation_name(node.id, globalns, localns)
+
+    if isinstance(node, ast.Attribute):
+        base = _resolve_annotation_node(node.value, globalns, localns)
+        if base is _UNRESOLVED:
+            return _UNRESOLVED
+        return getattr(base, node.attr, _UNRESOLVED)
+
+    if isinstance(node, ast.Constant) and node.value is None:
+        return type(None)
+
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        left = _resolve_annotation_node(node.left, globalns, localns)
+        right = _resolve_annotation_node(node.right, globalns, localns)
+        if left is _UNRESOLVED or right is _UNRESOLVED:
+            return _UNRESOLVED
+        try:
+            return left | right
+        except TypeError:
+            return _UNRESOLVED
+
+    if isinstance(node, ast.Subscript):
+        base = _resolve_annotation_node(node.value, globalns, localns)
+        if base is _UNRESOLVED:
+            return _UNRESOLVED
+        args = _resolve_annotation_subscript_args(node.slice, globalns, localns)
+        if args is _UNRESOLVED:
+            return _UNRESOLVED
+        if base is typing.Union:
+            try:
+                result = args[0]
+                for part in args[1:]:
+                    result = result | part
+                return result
+            except TypeError:
+                return _UNRESOLVED
+        if base is typing.Optional and len(args) == 1:
+            try:
+                return args[0] | type(None)
+            except TypeError:
+                return _UNRESOLVED
+        return _UNRESOLVED
+
+    return _UNRESOLVED
+
+
+def _resolve_annotation_subscript_args(
+    node: ast.AST,
+    globalns: dict[str, Any],
+    localns: dict[str, Any],
+) -> tuple[Any, ...] | object:
+    if isinstance(node, ast.Tuple):
+        resolved = tuple(
+            _resolve_annotation_node(item, globalns, localns)
+            for item in node.elts
+        )
+        if any(item is _UNRESOLVED for item in resolved):
+            return _UNRESOLVED
+        return resolved
+
+    resolved = _resolve_annotation_node(node, globalns, localns)
+    if resolved is _UNRESOLVED:
+        return _UNRESOLVED
+    return (resolved,)
+
+
+def _lookup_annotation_name(
+    name: str,
+    globalns: dict[str, Any],
+    localns: dict[str, Any],
+) -> Any:
+    if name == "None":
+        return type(None)
+    if name in localns:
+        return localns[name]
+    if name in globalns:
+        return globalns[name]
+    typing_value = getattr(typing, name, _UNRESOLVED)
+    if typing_value is not _UNRESOLVED:
+        return typing_value
+    return _UNRESOLVED
 
 
 class _HandleMarker:

@@ -223,7 +223,8 @@ def _assoc_in(root: Any, path: Sequence[str], value: Any) -> Any:
     All intermediate nodes must be PersistentMap instances.
     """
     _require_persistent_collections("update_in")
-    assert _PersistentMap is not None  # guaranteed by _require_persistent_collections
+    if _PersistentMap is None:
+        raise RuntimeError("persistent-collections was required but is unavailable")
 
     if not path:
         return value

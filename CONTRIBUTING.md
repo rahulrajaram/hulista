@@ -7,9 +7,12 @@ Run all commands from the repo root.
 - `make test`: run the full monorepo test suite.
 - `make coverage`: run the full suite with coverage gates. This must keep every package at `>=95%` line coverage and `>=90%` branch coverage.
 - `make typecheck`: run the repo mypy gate (strict on sources via `mypy.ini`, lenient on tests/benchmarks via `mypy-tests.ini`).
+- `make security`: run Bandit on shipped source packages and `pip-audit` on the repo's third-party dependency surface.
 - `make deprecationcheck`: run the repo test/build paths with deprecation warnings promoted to errors.
 - `make bench`: run the benchmark suite and compare results against checked-in budgets.
 - `make build`: build sdists and wheels for all packages.
+- `make docs-build`: build the public docs site locally (`python -m pip install -r docs/requirements.txt` first).
+- `make docs-serve`: run the docs site locally with live reload.
 
 The Makefile defaults to `python3`. Override with `make test PYTHON=/path/to/python` to use a specific interpreter.
 
@@ -20,6 +23,7 @@ The GitHub Actions workflow has six main jobs:
 - `test`: package unit tests plus the top-level integration suite across the active Python matrix.
 - `coverage`: the enforced coverage gate on Python 3.11.
 - `typecheck`: the enforced mypy gate on Python 3.11 (strict for library sources, lenient for tests/benchmarks).
+- `security`: the enforced source-code and dependency audit gate on Python 3.11.
 - `deprecationcheck`: the enforced warnings-as-errors gate for repo tests and package builds on Python 3.11.
 - `build`: wheel and sdist smoke builds for every package.
 - `benchmark`: benchmark checks on Python 3.11.
@@ -40,3 +44,13 @@ To promote a disabled error code: remove it from `mypy-tests.ini`, run `make typ
 All packages currently use `setuptools.build_meta`. Keep packaging changes consistent across packages unless there is a package-specific reason not to.
 
 Source distributions intentionally exclude repo test suites and benchmark fixtures. Validate packaging changes with `make build` before merging.
+
+## Docs
+
+The public docs site is built with MkDocs from [`docs/`](docs/). Install the docs toolchain with:
+
+```bash
+python -m pip install -r docs/requirements.txt
+```
+
+Then use `make docs-build` for a strict production build or `make docs-serve` while editing.

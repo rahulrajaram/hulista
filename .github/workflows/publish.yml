@@ -67,7 +67,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install release tooling
-        run: uv pip install --system build twine
+        run: uv pip install --system --upgrade build twine pkginfo
 
       - name: Build distributions
         run: cd ${{ matrix.package-dir }} && python -m build .
