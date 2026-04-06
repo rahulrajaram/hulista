@@ -30,10 +30,12 @@ Install the umbrella package:
 pip install hulista
 ```
 
-Or install only the pieces you need:
+The single `hulista` distribution still lets you import only the pieces you need:
 
-```bash
-pip install persistent-collections sealed-typing taskgroup-collect
+```python
+from persistent_collections import PersistentMap
+from sealed_typing import sealed
+from taskgroup_collect import CollectorTaskGroup
 ```
 
 ## Quick example

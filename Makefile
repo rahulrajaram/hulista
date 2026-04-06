@@ -54,13 +54,21 @@ bench:
 
 build:
 	for pkg in $(BUILD_PACKAGES); do \
-		(cd $$pkg && $(PYTHON) -m build .); \
+		if [ "$$pkg" = "hulista" ]; then \
+			$(PYTHON) scripts/build_hulista_dist.py; \
+		else \
+			(cd $$pkg && $(PYTHON) -m build .); \
+		fi; \
 	done
 
 deprecationcheck:
 	PYTHONPATH="$(PYTHONPATH)" $(PYTHON) $(PYTEST_DEPRECATION_FLAGS) -m pytest -p no:pytest_monitor $(PACKAGE_TESTS) -q
 	for pkg in $(BUILD_PACKAGES); do \
-		(cd $$pkg && $(PYTHON) $(BUILD_DEPRECATION_FLAGS) -m build .); \
+		if [ "$$pkg" = "hulista" ]; then \
+			PYTHONWARNINGS="error::DeprecationWarning,error::PendingDeprecationWarning,error::UserWarning:setuptools" $(PYTHON) scripts/build_hulista_dist.py; \
+		else \
+			(cd $$pkg && $(PYTHON) $(BUILD_DEPRECATION_FLAGS) -m build .); \
+		fi; \
 	done
 
 security:

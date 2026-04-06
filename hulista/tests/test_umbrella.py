@@ -27,6 +27,22 @@ def test_version_exists() -> None:
     assert hulista.__version__ == project_version
 
 
+def test_no_internal_distribution_dependencies() -> None:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    project = tomllib.loads(pyproject.read_text())["project"]
+    dependencies = set(project.get("dependencies", []))
+    internal = {
+        "asyncio-actors>=0.1.0",
+        "fp-combinators>=0.1.0",
+        "live-dispatch>=0.1.0",
+        "persistent-collections>=0.1.0",
+        "sealed-typing>=0.1.0",
+        "taskgroup-collect>=0.1.0",
+        "with-update>=0.1.0",
+    }
+    assert dependencies.isdisjoint(internal)
+
+
 # ---------------------------------------------------------------------------
 # 2. All expected names are present in hulista namespace
 # ---------------------------------------------------------------------------

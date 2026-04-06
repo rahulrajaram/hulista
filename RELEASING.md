@@ -10,7 +10,7 @@ This repository already has the two core automation pieces needed for a public r
 Before the first public release, confirm these settings in GitHub and PyPI:
 
 1. Enable GitHub Pages for this repository and allow GitHub Actions to deploy it.
-2. Create `hulista` and each leaf package on PyPI and TestPyPI if you want to reserve the names ahead of time.
+2. Create the `hulista` project on PyPI and TestPyPI if you want to reserve the name ahead of time.
 3. Configure PyPI Trusted Publishing for this repository and the `pypi` environment.
 4. Configure TestPyPI Trusted Publishing for this repository and the `testpypi` environment.
 5. Protect the `pypi` environment if you want a manual approval gate before production publishing.
@@ -41,8 +41,8 @@ make build
 
 ```bash
 python -m pip install -U build twine pkginfo
+python scripts/build_hulista_dist.py
 cd hulista
-python -m build .
 python -m twine check dist/*
 ```
 
@@ -54,7 +54,7 @@ Use the existing `Publish` workflow before the first real release and before any
 2. Run `Publish`.
 3. Choose `repository = testpypi`.
 4. Set `ref` to the branch, commit SHA, or release candidate tag you want to validate.
-5. Wait for all matrix jobs to finish.
+5. Wait for the publish job to finish.
 
 Then validate installs from TestPyPI in a clean virtual environment. Example:
 
@@ -68,22 +68,22 @@ python -c "import hulista; print(hulista.__version__)"
 
 ## Production release
 
-The production path is tag-driven. Pushing a tag that matches `v*` will publish every package in the monorepo.
+The production path is tag-driven. Pushing a tag that matches `v*` will publish the `hulista` distribution.
 
 Recommended sequence:
 
 1. Merge the release commit to `master`.
 2. Create an annotated tag such as `v0.1.0`.
 3. Push the tag.
-4. Watch [`.github/workflows/publish.yml`](.github/workflows/publish.yml) complete for every package.
+4. Watch [`.github/workflows/publish.yml`](.github/workflows/publish.yml) complete for `hulista`.
 5. Verify the live pages on PyPI and the docs site.
 
 ## Release model
 
-This repo is currently set up for coordinated releases:
+This repo is currently released as a single public distribution:
 
 - one changelog
 - one release tag namespace
-- one publish workflow matrix for all packages
+- one PyPI project: `hulista`
 
-That is a good fit while the package family is still moving together. If you later want independent release cadences, the publish workflow and tag strategy should be split per package.
+The monorepo package directories remain useful for development, testing, and source organization, but only `hulista` is published.
