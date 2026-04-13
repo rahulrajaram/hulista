@@ -57,13 +57,13 @@ jobs:
 
       - name: Publish package distributions to PyPI
         if: github.event_name != 'workflow_dispatch' || inputs.repository == 'pypi'
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
           packages-dir: hulista/dist
 
       - name: Publish package distributions to TestPyPI
         if: github.event_name == 'workflow_dispatch' && inputs.repository == 'testpypi'
-        uses: pypa/gh-action-pypi-publish@v1.13.0
+        uses: pypa/gh-action-pypi-publish@v1.14.0
         with:
           packages-dir: hulista/dist
           repository-url: https://test.pypi.org/legacy/
