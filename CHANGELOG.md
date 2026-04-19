@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.1 - 2026-04-19
+
+### Fixed
+
+- `hulista`: wheel now ships the top-level `hulista` package. In 0.1.0 a misconfigured `[tool.hatch.build.targets.wheel]` `packages` path caused Hatch to silently skip the meta-package, so `from hulista import Result, PersistentMap, sealed, ...` (the documented primary API) raised `ModuleNotFoundError` on every fresh install. Editable installs masked the bug, so it reached PyPI. Reported by the `selfimprove` agent via gptqueue.
+
+### Added
+
+- CI: release workflow now installs the built wheel into a clean venv and imports the top-level `hulista` API as a smoke test, so a broken meta-package wheel cannot reach PyPI again.
+
 ## 0.1.0 - 2026-04-05
 
 Initial monorepo release for the hulista package family.

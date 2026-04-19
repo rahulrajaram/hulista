@@ -55,6 +55,12 @@ jobs:
       - name: Verify distribution metadata
         run: python -m twine check hulista/dist/*
 
+      - name: Smoke-test built wheel in a clean venv
+        run: |
+          uv venv /tmp/hulista-smoke --python 3.11
+          uv pip install --python /tmp/hulista-smoke/bin/python hulista/dist/hulista-*.whl
+          /tmp/hulista-smoke/bin/python -c "from hulista import Result, Ok, Err, PersistentMap, PersistentVector, sealed, Dispatcher, CollectorTaskGroup, updatable, with_update, Actor; import hulista; print('hulista', hulista.__version__)"
+
       - name: Publish package distributions to PyPI
         if: github.event_name != 'workflow_dispatch' || inputs.repository == 'pypi'
         uses: pypa/gh-action-pypi-publish@v1.13.0
