@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.2 - 2026-04-25
+
+### Fixed
+
+- `persistent-collections`: ship `persistent_set.pyi` so `PersistentSet[T]` annotations stop tripping Pyright's `reportInvalidTypeArguments`. The runtime class shipped in 0.1.1 but no type stub, so downstream typed projects had to suppress the diagnostic per call site or drop typing. Stub mirrors the existing `persistent_vector.pyi` shape (`Generic[T] + collections.abc.Set[T]`, `iterable: object | None = ...`).
+
 ## 0.1.1 - 2026-04-19
 
 ### Fixed
