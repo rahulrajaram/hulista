@@ -32,7 +32,7 @@ from taskgroup_collect import CollectorTaskGroup
 # Updatable records
 from with_update import updatable, with_update
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     # persistent-collections
